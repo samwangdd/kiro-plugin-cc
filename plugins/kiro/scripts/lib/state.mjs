@@ -86,18 +86,23 @@ async function getLockAgeMs(lockPath) {
   }
 }
 
-function isLockStale(metadata) {
-  const createdAtMs = Date.parse(metadata.createdAt);
+function getLockPid(metadata) {
+  return Number.isFinite(metadata?.pid) ? metadata.pid : null;
+}
 
-  if (Number.isFinite(createdAtMs) && Date.now() - createdAtMs > LOCK_STALE_MS) {
-    return true;
+async function shouldRecoverLock(lockPath, metadata) {
+  const lockAgeMs = await getLockAgeMs(lockPath);
+
+  if (metadata == null) {
+    return lockAgeMs != null && lockAgeMs > LOCK_STALE_MS;
   }
 
-  if (Number.isFinite(metadata.pid) && !isPidAlive(metadata.pid)) {
-    return true;
+  const pid = getLockPid(metadata);
+  if (pid != null) {
+    return !isPidAlive(pid);
   }
 
-  return false;
+  return lockAgeMs != null && lockAgeMs > LOCK_STALE_MS;
 }
 
 async function acquireStateLock(lockPath) {
@@ -144,19 +149,7 @@ async function acquireStateLock(lockPath) {
 
       const lockMetadata = await readLockMetadata(lockPath);
 
-      if (lockMetadata == null) {
-        const lockAgeMs = await getLockAgeMs(lockPath);
-
-        if (lockAgeMs == null || lockAgeMs > LOCK_STALE_MS) {
-          await rm(lockPath, { force: true });
-          continue;
-        }
-
-        await delay(LOCK_RETRY_MS);
-        continue;
-      }
-
-      if (isLockStale(lockMetadata)) {
+      if (await shouldRecoverLock(lockPath, lockMetadata)) {
         await rm(lockPath, { force: true });
         continue;
       }

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { writeFile } from "node:fs/promises";
+import { rm, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { withTempHome } from "../helpers/temp-env.mjs";
@@ -133,7 +133,7 @@ describe("job state persistence", () => {
     });
   });
 
-  it("recovers from an old lock file owned by the current process", async () => {
+  it("does not reclaim an old lock file owned by the current process", async () => {
     await withTempHome(async (home, env) => {
       const lockPath = path.join(home, ".state.lock");
       await writeFile(
@@ -144,6 +144,36 @@ describe("job state persistence", () => {
           createdAt: "2026-03-31T00:00:00.000Z"
         })}\n`,
         "utf8"
+      );
+
+      let settled = false;
+      const pending = createJobMeta("review", { base: "main" }, env).then(
+        (result) => {
+          settled = true;
+          return result;
+        }
+      );
+
+      try {
+        await new Promise((resolve) => setTimeout(resolve, 50));
+        expect(settled).toBe(false);
+        await rm(lockPath, { force: true });
+        const created = await pending;
+        expect(created.id).toBeDefined();
+      } finally {
+        await rm(lockPath, { force: true });
+      }
+    });
+  });
+
+  it("recovers malformed stale lock metadata", async () => {
+    await withTempHome(async (home, env) => {
+      const lockPath = path.join(home, ".state.lock");
+      await writeFile(lockPath, `${JSON.stringify({ token: "x" })}\n`, "utf8");
+      await utimes(
+        lockPath,
+        new Date("2026-03-31T00:00:00.000Z"),
+        new Date("2026-03-31T00:00:00.000Z")
       );
 
       const created = await createJobMeta("review", { base: "main" }, env);
