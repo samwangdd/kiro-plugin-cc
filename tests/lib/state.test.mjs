@@ -85,4 +85,28 @@ describe("job state persistence", () => {
       }
     });
   });
+
+  it("persists all concurrently created jobs", async () => {
+    await withTempHome(async (_home, env) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-01T00:00:00.000Z"));
+
+      try {
+        const jobs = await Promise.all(
+          Array.from({ length: 20 }, (_, index) =>
+            createJobMeta("review", { index }, env)
+          )
+        );
+
+        const globalState = await loadGlobalState(env);
+        const listedJobs = await listJobMeta(env);
+
+        expect(jobs).toHaveLength(20);
+        expect(Object.keys(globalState.jobs)).toHaveLength(20);
+        expect(listedJobs).toHaveLength(20);
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+  });
 });

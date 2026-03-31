@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
+import { mkdir, rm } from "node:fs/promises";
+import { setTimeout as delay } from "node:timers/promises";
 
 import { ensureDir, readJson, resolveStateHome, writeJson } from "./fs.mjs";
 
@@ -18,6 +20,41 @@ function getNextJobSequence(jobs) {
       return sequence > max ? sequence : max;
     }, 0) + 1
   );
+}
+
+const LOCK_RETRY_MS = 10;
+
+function getStateLockPath(env = process.env) {
+  return path.join(resolveStateHome(env), ".state.lock");
+}
+
+async function acquireStateLock(lockPath) {
+  for (;;) {
+    try {
+      await mkdir(lockPath);
+      return async () => {
+        await rm(lockPath, { recursive: true, force: true });
+      };
+    } catch (error) {
+      if (error.code !== "EEXIST") {
+        throw error;
+      }
+
+      await delay(LOCK_RETRY_MS);
+    }
+  }
+}
+
+async function withStateLock(env, run) {
+  const lockPath = getStateLockPath(env);
+  await ensureDir(path.dirname(lockPath));
+  const release = await acquireStateLock(lockPath);
+
+  try {
+    return await run();
+  } finally {
+    await release();
+  }
 }
 
 export function getStatePaths(env = process.env) {
@@ -55,42 +92,47 @@ export async function loadGlobalState(env = process.env) {
 }
 
 export async function saveGlobalState(nextState, env = process.env) {
-  const { stateFile } = await ensureStateLayout(env);
-  await writeJson(stateFile, nextState);
-  return nextState;
+  return withStateLock(env, async () => {
+    const { stateFile } = await ensureStateLayout(env);
+    await writeJson(stateFile, nextState);
+    return nextState;
+  });
 }
 
 export async function createJobMeta(command, options = {}, env = process.env) {
-  const id = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
-  const now = new Date().toISOString();
-  const state = await loadGlobalState(env);
-  const sequence = getNextJobSequence(state.jobs);
-  const { metaPath, logPath } = getJobPaths(id, env);
+  return withStateLock(env, async () => {
+    const id = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
+    const now = new Date().toISOString();
+    const state = await loadGlobalState(env);
+    const sequence = getNextJobSequence(state.jobs);
+    const { metaPath, logPath } = getJobPaths(id, env);
 
-  const job = {
-    id,
-    command,
-    options,
-    status: "pending",
-    createdAt: now,
-    updatedAt: now,
-    sequence,
-    metaPath,
-    logPath
-  };
+    const job = {
+      id,
+      command,
+      options,
+      status: "pending",
+      createdAt: now,
+      updatedAt: now,
+      sequence,
+      metaPath,
+      logPath
+    };
 
-  await writeJson(metaPath, job);
+    await writeJson(metaPath, job);
 
-  state.jobs[id] = {
-    command,
-    status: job.status,
-    createdAt: now,
-    updatedAt: now,
-    sequence
-  };
-  await saveGlobalState(state, env);
+    state.jobs[id] = {
+      command,
+      status: job.status,
+      createdAt: now,
+      updatedAt: now,
+      sequence
+    };
+    const { stateFile } = await ensureStateLayout(env);
+    await writeJson(stateFile, state);
 
-  return job;
+    return job;
+  });
 }
 
 export async function readJobMeta(jobId, env = process.env) {
@@ -98,32 +140,35 @@ export async function readJobMeta(jobId, env = process.env) {
 }
 
 export async function updateJobMeta(jobId, patch, env = process.env) {
-  const current = await readJobMeta(jobId, env);
+  return withStateLock(env, async () => {
+    const current = await readJobMeta(jobId, env);
 
-  if (!current) {
-    throw new Error(`Unknown job: ${jobId}`);
-  }
+    if (!current) {
+      throw new Error(`Unknown job: ${jobId}`);
+    }
 
-  const next = {
-    ...current,
-    ...patch,
-    updatedAt: new Date().toISOString()
-  };
+    const next = {
+      ...current,
+      ...patch,
+      updatedAt: new Date().toISOString()
+    };
 
-  await writeJson(getJobPaths(jobId, env).metaPath, next);
+    await writeJson(getJobPaths(jobId, env).metaPath, next);
 
-  const state = await loadGlobalState(env);
-  state.jobs[jobId] = {
-    command: next.command,
-    status: next.status,
-    createdAt: next.createdAt,
-    updatedAt: next.updatedAt,
-    summary: next.summary || "",
-    sequence: current.sequence || 0
-  };
-  await saveGlobalState(state, env);
+    const state = await loadGlobalState(env);
+    state.jobs[jobId] = {
+      command: next.command,
+      status: next.status,
+      createdAt: next.createdAt,
+      updatedAt: next.updatedAt,
+      summary: next.summary || "",
+      sequence: current.sequence || 0
+    };
+    const { stateFile } = await ensureStateLayout(env);
+    await writeJson(stateFile, state);
 
-  return next;
+    return next;
+  });
 }
 
 export async function listJobMeta(env = process.env) {

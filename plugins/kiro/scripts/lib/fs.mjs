@@ -1,6 +1,7 @@
 import os from "node:os";
 import path from "node:path";
-import { mkdir, readFile, writeFile } from "node:fs/promises";
+import { mkdir, readFile, rename, rm, writeFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 
 export function resolveStateHome(env = process.env) {
   return env.KIRO_COMPANION_HOME || path.join(os.homedir(), ".kiro-companion");
@@ -24,7 +25,19 @@ export async function readJson(filePath, fallback = null) {
 
 export async function writeJson(filePath, value) {
   await ensureDir(path.dirname(filePath));
-  await writeFile(filePath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${randomUUID()}.tmp`
+  );
+
+  try {
+    await writeFile(tempPath, `${JSON.stringify(value, null, 2)}\n`, "utf8");
+    await rename(tempPath, filePath);
+  } catch (error) {
+    await rm(tempPath, { force: true });
+    throw error;
+  }
+
   return filePath;
 }
 
@@ -41,6 +54,18 @@ export async function readText(filePath, fallback = "") {
 
 export async function writeText(filePath, value) {
   await ensureDir(path.dirname(filePath));
-  await writeFile(filePath, value, "utf8");
+  const tempPath = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${randomUUID()}.tmp`
+  );
+
+  try {
+    await writeFile(tempPath, value, "utf8");
+    await rename(tempPath, filePath);
+  } catch (error) {
+    await rm(tempPath, { force: true });
+    throw error;
+  }
+
   return filePath;
 }
