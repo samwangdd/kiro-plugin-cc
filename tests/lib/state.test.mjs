@@ -1,4 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
+import { mkdir, writeFile } from "node:fs/promises";
+import path from "node:path";
 
 import { withTempHome } from "../helpers/temp-env.mjs";
 import {
@@ -107,6 +109,20 @@ describe("job state persistence", () => {
       } finally {
         vi.useRealTimers();
       }
+    });
+  });
+
+  it("recovers from a stale state lock", async () => {
+    await withTempHome(async (home, env) => {
+      const lockPath = path.join(home, ".state.lock");
+      await mkdir(lockPath);
+      await writeFile(path.join(lockPath, "owner.pid"), "999999\n", "utf8");
+
+      const created = await createJobMeta("review", { base: "main" }, env);
+      const globalState = await loadGlobalState(env);
+
+      expect(created.id).toBeDefined();
+      expect(globalState.jobs[created.id]).toBeDefined();
     });
   });
 });

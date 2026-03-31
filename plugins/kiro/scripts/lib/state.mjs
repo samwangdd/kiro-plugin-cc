@@ -3,7 +3,14 @@ import path from "node:path";
 import { mkdir, rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
-import { ensureDir, readJson, resolveStateHome, writeJson } from "./fs.mjs";
+import {
+  ensureDir,
+  readJson,
+  readText,
+  resolveStateHome,
+  writeJson,
+  writeText
+} from "./fs.mjs";
 
 export const DEFAULT_STATE = {
   version: 1,
@@ -23,21 +30,77 @@ function getNextJobSequence(jobs) {
 }
 
 const LOCK_RETRY_MS = 10;
+const LOCK_MISSING_PID_RETRIES = 20;
 
 function getStateLockPath(env = process.env) {
   return path.join(resolveStateHome(env), ".state.lock");
 }
 
+function getStateLockPidPath(lockPath) {
+  return path.join(lockPath, "owner.pid");
+}
+
+function isPidAlive(pid) {
+  try {
+    process.kill(pid, 0);
+    return true;
+  } catch (error) {
+    if (error.code === "ESRCH") {
+      return false;
+    }
+
+    if (error.code === "EPERM") {
+      return true;
+    }
+
+    throw error;
+  }
+}
+
 async function acquireStateLock(lockPath) {
+  const lockPidPath = getStateLockPidPath(lockPath);
+  let missingPidAttempts = 0;
+
   for (;;) {
     try {
       await mkdir(lockPath);
+      await writeText(lockPidPath, `${process.pid}\n`);
       return async () => {
         await rm(lockPath, { recursive: true, force: true });
       };
     } catch (error) {
       if (error.code !== "EEXIST") {
         throw error;
+      }
+
+      try {
+        const pidText = await readText(lockPidPath, "");
+        const ownerPid = Number.parseInt(pidText, 10);
+
+        if (!Number.isFinite(ownerPid)) {
+          if (missingPidAttempts < LOCK_MISSING_PID_RETRIES) {
+            missingPidAttempts += 1;
+            await delay(LOCK_RETRY_MS);
+            continue;
+          }
+
+          await rm(lockPath, { recursive: true, force: true });
+          missingPidAttempts = 0;
+          continue;
+        }
+
+        missingPidAttempts = 0;
+
+        if (!isPidAlive(ownerPid)) {
+          await rm(lockPath, { recursive: true, force: true });
+          continue;
+        }
+      } catch (statError) {
+        if (statError.code !== "ENOENT") {
+          throw statError;
+        }
+
+        continue;
       }
 
       await delay(LOCK_RETRY_MS);
