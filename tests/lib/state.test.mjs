@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 
 import { withTempHome } from "../helpers/temp-env.mjs";
 import {
@@ -62,6 +62,27 @@ describe("job state persistence", () => {
 
       expect(jobs).toHaveLength(2);
       expect(jobs.map((job) => job.id)).toEqual([second.id, first.id]);
+    });
+  });
+
+  it("lists the newer job first when createdAt is identical", async () => {
+    await withTempHome(async (_home, env) => {
+      vi.useFakeTimers();
+      vi.setSystemTime(new Date("2026-04-01T00:00:00.000Z"));
+
+      try {
+        const first = await createJobMeta("review", { base: "main" }, env);
+        const second = await createJobMeta("rescue", { task: "fix" }, env);
+
+        const jobs = await listJobMeta(env);
+
+        expect(jobs).toHaveLength(2);
+        expect(jobs[0].id).toBe(second.id);
+        expect(jobs[0].createdAt).toBe(first.createdAt);
+        expect(jobs[1].id).toBe(first.id);
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

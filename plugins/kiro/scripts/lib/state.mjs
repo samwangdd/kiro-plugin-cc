@@ -11,6 +11,15 @@ export const DEFAULT_STATE = {
   jobs: {}
 };
 
+function getNextJobSequence(jobs) {
+  return (
+    Object.values(jobs).reduce((max, job) => {
+      const sequence = Number(job?.sequence || 0);
+      return sequence > max ? sequence : max;
+    }, 0) + 1
+  );
+}
+
 export function getStatePaths(env = process.env) {
   const home = resolveStateHome(env);
   return {
@@ -54,6 +63,8 @@ export async function saveGlobalState(nextState, env = process.env) {
 export async function createJobMeta(command, options = {}, env = process.env) {
   const id = `job-${Date.now()}-${randomUUID().slice(0, 8)}`;
   const now = new Date().toISOString();
+  const state = await loadGlobalState(env);
+  const sequence = getNextJobSequence(state.jobs);
   const { metaPath, logPath } = getJobPaths(id, env);
 
   const job = {
@@ -63,18 +74,19 @@ export async function createJobMeta(command, options = {}, env = process.env) {
     status: "pending",
     createdAt: now,
     updatedAt: now,
+    sequence,
     metaPath,
     logPath
   };
 
   await writeJson(metaPath, job);
 
-  const state = await loadGlobalState(env);
   state.jobs[id] = {
     command,
     status: job.status,
     createdAt: now,
-    updatedAt: now
+    updatedAt: now,
+    sequence
   };
   await saveGlobalState(state, env);
 
@@ -106,7 +118,8 @@ export async function updateJobMeta(jobId, patch, env = process.env) {
     status: next.status,
     createdAt: next.createdAt,
     updatedAt: next.updatedAt,
-    summary: next.summary || ""
+    summary: next.summary || "",
+    sequence: current.sequence || 0
   };
   await saveGlobalState(state, env);
 
@@ -117,5 +130,9 @@ export async function listJobMeta(env = process.env) {
   const state = await loadGlobalState(env);
   return Object.entries(state.jobs)
     .map(([id, job]) => ({ id, ...job }))
-    .sort((left, right) => right.createdAt.localeCompare(left.createdAt));
+    .sort(
+      (left, right) =>
+        right.createdAt.localeCompare(left.createdAt) ||
+        (right.sequence || 0) - (left.sequence || 0)
+    );
 }
