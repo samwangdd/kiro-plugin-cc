@@ -4,6 +4,7 @@ import { readText, writeText } from "./fs.mjs";
 
 const STATE_PREFIX = "<!-- kiro-companion-state";
 const STATE_SUFFIX = "-->";
+const MAX_TOTAL_LINES = 200;
 
 function defaultSnapshot(projectRoot) {
   return {
@@ -56,23 +57,8 @@ function linesForAttempts(items) {
   return items.map((item) => `| ${item.attempt} | ${item.result} | ${item.reason} |`);
 }
 
-export function getHandoffPath(projectRoot) {
-  return path.join(projectRoot, ".kiro-companion", "handoff.md");
-}
-
-export function renderHandoff(projectRoot, input = {}) {
-  const base = defaultSnapshot(projectRoot);
-  const snapshot = {
-    ...base,
-    ...input,
-    context: {
-      ...base.context,
-      ...(input.context || {})
-    },
-    updatedAt: new Date().toISOString()
-  };
-
-  const lines = [
+function buildVisibleLines(snapshot) {
+  return [
     `# Handoff — ${snapshot.projectName}`,
     "",
     "## 目标",
@@ -112,15 +98,35 @@ export function renderHandoff(projectRoot, input = {}) {
     `- **开放问题**：${snapshot.context.openQuestions || "暂无"}`,
     "",
     "---",
-    `最后更新：${snapshot.updatedAt}`,
-    "",
-    `${STATE_PREFIX}`,
-    JSON.stringify(snapshot, null, 2),
-    STATE_SUFFIX,
-    ""
+    `最后更新：${snapshot.updatedAt}`
   ];
+}
 
-  return lines.slice(0, 200).join("\n");
+export function getHandoffPath(projectRoot) {
+  return path.join(projectRoot, ".kiro-companion", "handoff.md");
+}
+
+export function renderHandoff(projectRoot, input = {}) {
+  const base = defaultSnapshot(projectRoot);
+  const snapshot = {
+    ...base,
+    ...input,
+    context: {
+      ...base.context,
+      ...(input.context || {})
+    },
+    updatedAt: new Date().toISOString()
+  };
+
+  const hiddenLines = [
+    `${STATE_PREFIX}`,
+    JSON.stringify(snapshot),
+    STATE_SUFFIX
+  ];
+  const maxVisibleLines = Math.max(0, MAX_TOTAL_LINES - hiddenLines.length - 2);
+  const visibleLines = buildVisibleLines(snapshot).slice(0, maxVisibleLines);
+
+  return [...visibleLines, "", ...hiddenLines, ""].join("\n");
 }
 
 export async function ensureHandoff(projectRoot, seed = {}) {
