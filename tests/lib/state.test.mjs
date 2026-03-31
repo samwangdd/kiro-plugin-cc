@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { access, rm, utimes, writeFile } from "node:fs/promises";
+import { access, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { withTempHome } from "../helpers/temp-env.mjs";
@@ -10,7 +10,6 @@ import {
   getStatePaths,
   listJobMeta,
   loadGlobalState,
-  removeLockIfContentsMatch,
   readJobMeta,
   updateJobMeta
 } from "../../plugins/kiro/scripts/lib/state.mjs";
@@ -114,75 +113,23 @@ describe("job state persistence", () => {
     });
   });
 
-  it("recovers from a stale state lock", async () => {
+  it("does not steal a live lock and times out while waiting for it", async () => {
     await withTempHome(async (home, env) => {
       const lockPath = path.join(home, ".state.lock");
-      await writeFile(
-        lockPath,
-        `${JSON.stringify({
-          token: "stale-token",
-          pid: 999999,
-          createdAt: "2026-03-31T00:00:00.000Z"
-        })}\n`,
-        "utf8"
-      );
+      const lockContents = `${JSON.stringify({
+        token: "live-token",
+        pid: process.pid,
+        createdAt: "2026-03-31T00:00:00.000Z"
+      })}\n`;
 
-      const created = await createJobMeta("review", { base: "main" }, env);
-      const globalState = await loadGlobalState(env);
+      await writeFile(lockPath, lockContents, "utf8");
 
-      expect(created.id).toBeDefined();
-      expect(globalState.jobs[created.id]).toBeDefined();
-    });
-  });
+      env.KIRO_COMPANION_LOCK_TIMEOUT_MS = "50";
 
-  it("does not reclaim an old lock file owned by the current process", async () => {
-    await withTempHome(async (home, env) => {
-      const lockPath = path.join(home, ".state.lock");
-      await writeFile(
-        lockPath,
-        `${JSON.stringify({
-          token: "stale-token",
-          pid: process.pid,
-          createdAt: "2026-03-31T00:00:00.000Z"
-        })}\n`,
-        "utf8"
-      );
+      const pending = createJobMeta("review", { base: "main" }, env);
 
-      let settled = false;
-      const pending = createJobMeta("review", { base: "main" }, env).then(
-        (result) => {
-          settled = true;
-          return result;
-        }
-      );
-
-      try {
-        await new Promise((resolve) => setTimeout(resolve, 50));
-        expect(settled).toBe(false);
-        await rm(lockPath, { force: true });
-        const created = await pending;
-        expect(created.id).toBeDefined();
-      } finally {
-        await rm(lockPath, { force: true });
-      }
-    });
-  });
-
-  it("recovers malformed stale lock metadata", async () => {
-    await withTempHome(async (home, env) => {
-      const lockPath = path.join(home, ".state.lock");
-      await writeFile(lockPath, `${JSON.stringify({ token: "x" })}\n`, "utf8");
-      await utimes(
-        lockPath,
-        new Date("2026-03-31T00:00:00.000Z"),
-        new Date("2026-03-31T00:00:00.000Z")
-      );
-
-      const created = await createJobMeta("review", { base: "main" }, env);
-      const globalState = await loadGlobalState(env);
-
-      expect(created.id).toBeDefined();
-      expect(globalState.jobs[created.id]).toBeDefined();
+      await expect(pending).rejects.toThrow(/timed out/i);
+      await expect(readFile(lockPath, "utf8")).resolves.toBe(lockContents);
     });
   });
 
@@ -232,27 +179,4 @@ describe("job state persistence", () => {
     });
   });
 
-  it("does not delete a replaced lock file when recovering stale contents", async () => {
-    await withTempHome(async (home) => {
-      const lockPath = path.join(home, ".state.lock");
-      const staleContents = `${JSON.stringify({
-        token: "stale-token",
-        pid: 999999,
-        createdAt: "2026-03-31T00:00:00.000Z"
-      })}\n`;
-      const freshContents = `${JSON.stringify({
-        token: "fresh-token",
-        pid: process.pid,
-        createdAt: new Date().toISOString()
-      })}\n`;
-
-      await writeFile(lockPath, staleContents, "utf8");
-      await writeFile(lockPath, freshContents, "utf8");
-
-      const deleted = await removeLockIfContentsMatch(lockPath, staleContents);
-
-      expect(deleted).toBe(false);
-      await access(lockPath);
-    });
-  });
 });

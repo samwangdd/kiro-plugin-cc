@@ -1,6 +1,6 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { open, readFile, rm, stat } from "node:fs/promises";
+import { open, readFile, rm } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
 import { ensureDir, readJson, resolveStateHome, writeJson } from "./fs.mjs";
@@ -23,27 +23,10 @@ function getNextJobSequence(jobs) {
 }
 
 const LOCK_RETRY_MS = 10;
-const LOCK_STALE_MS = 1000;
+const DEFAULT_LOCK_ACQUIRE_TIMEOUT_MS = 5000;
 
 function getStateLockPath(env = process.env) {
   return path.join(resolveStateHome(env), ".state.lock");
-}
-
-function isPidAlive(pid) {
-  try {
-    process.kill(pid, 0);
-    return true;
-  } catch (error) {
-    if (error.code === "ESRCH") {
-      return false;
-    }
-
-    if (error.code === "EPERM") {
-      return true;
-    }
-
-    throw error;
-  }
 }
 
 function parseLockContents(contents) {
@@ -63,9 +46,10 @@ function parseLockContents(contents) {
 async function readLockSnapshot(lockPath) {
   try {
     const contents = await readFile(lockPath, "utf8");
-    const metadata = parseLockContents(contents);
-    const ageMs = await getLockAgeMs(lockPath);
-    return { contents, metadata, ageMs };
+    return {
+      contents,
+      metadata: parseLockContents(contents)
+    };
   } catch (error) {
     if (error.code === "ENOENT") {
       return null;
@@ -75,60 +59,31 @@ async function readLockSnapshot(lockPath) {
   }
 }
 
-export async function removeLockIfContentsMatch(lockPath, expectedContents) {
-  try {
-    const currentContents = await readFile(lockPath, "utf8");
-    if (currentContents !== expectedContents) {
-      return false;
-    }
-
-    await rm(lockPath, { force: true });
-    return true;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return false;
-    }
-
-    throw error;
-  }
+function getLockAcquireTimeoutMs(env = process.env) {
+  const rawTimeout = env.KIRO_COMPANION_LOCK_TIMEOUT_MS;
+  const parsedTimeout = Number.parseInt(rawTimeout || "", 10);
+  return Number.isFinite(parsedTimeout) && parsedTimeout > 0
+    ? parsedTimeout
+    : DEFAULT_LOCK_ACQUIRE_TIMEOUT_MS;
 }
 
-async function getLockAgeMs(lockPath) {
-  try {
-    const lockStats = await stat(lockPath);
-    return Date.now() - lockStats.mtimeMs;
-  } catch (error) {
-    if (error.code === "ENOENT") {
-      return null;
-    }
-
-    throw error;
-  }
-}
-
-function getLockPid(metadata) {
-  return Number.isFinite(metadata?.pid) ? metadata.pid : null;
-}
-
-function shouldRecoverLockSnapshot(snapshot) {
-  if (snapshot == null) {
-    return false;
+function formatLockDiagnostics(snapshot) {
+  if (!snapshot?.metadata) {
+    return "";
   }
 
-  const { metadata, ageMs } = snapshot;
-  const pid = getLockPid(metadata);
-
-  if (pid != null) {
-    return !isPidAlive(pid);
-  }
-
-  return ageMs != null && ageMs > LOCK_STALE_MS;
+  const { token, pid, createdAt } = snapshot.metadata;
+  return ` (owner token=${token || "unknown"} pid=${pid || "unknown"} createdAt=${
+    createdAt || "unknown"
+  })`;
 }
 
-async function acquireStateLock(lockPath) {
+async function acquireStateLock(lockPath, env) {
   const token = randomUUID();
   const ownerPid = process.pid;
   const createdAt = new Date().toISOString();
+  const startedAt = Date.now();
+  const timeoutMs = getLockAcquireTimeoutMs(env);
 
   for (;;) {
     try {
@@ -167,17 +122,11 @@ async function acquireStateLock(lockPath) {
         throw error;
       }
 
-      const lockSnapshot = await readLockSnapshot(lockPath);
-
-      if (lockSnapshot == null) {
-        await delay(LOCK_RETRY_MS);
-        continue;
-      }
-
-      if (shouldRecoverLockSnapshot(lockSnapshot)) {
-        if (await removeLockIfContentsMatch(lockPath, lockSnapshot.contents)) {
-          continue;
-        }
+      if (Date.now() - startedAt >= timeoutMs) {
+        const lockSnapshot = await readLockSnapshot(lockPath);
+        throw new Error(
+          `Timed out after ${timeoutMs}ms waiting for state lock at ${lockPath}${formatLockDiagnostics(lockSnapshot)}`
+        );
       }
 
       await delay(LOCK_RETRY_MS);
@@ -188,7 +137,7 @@ async function acquireStateLock(lockPath) {
 async function withStateLock(env, run) {
   const lockPath = getStateLockPath(env);
   await ensureDir(path.dirname(lockPath));
-  const release = await acquireStateLock(lockPath);
+  const release = await acquireStateLock(lockPath, env);
 
   try {
     return await run();
