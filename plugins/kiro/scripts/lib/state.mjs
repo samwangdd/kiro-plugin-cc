@@ -3,7 +3,7 @@ import path from "node:path";
 
 import { ensureDir, readJson, resolveStateHome, writeJson } from "./fs.mjs";
 
-const DEFAULT_STATE = {
+export const DEFAULT_STATE = {
   version: 1,
   config: {
     timeoutMs: 300000
