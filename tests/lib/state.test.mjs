@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { mkdir, writeFile } from "node:fs/promises";
+import { writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { withTempHome } from "../helpers/temp-env.mjs";
@@ -115,8 +115,36 @@ describe("job state persistence", () => {
   it("recovers from a stale state lock", async () => {
     await withTempHome(async (home, env) => {
       const lockPath = path.join(home, ".state.lock");
-      await mkdir(lockPath);
-      await writeFile(path.join(lockPath, "owner.pid"), "999999\n", "utf8");
+      await writeFile(
+        lockPath,
+        `${JSON.stringify({
+          token: "stale-token",
+          pid: 999999,
+          createdAt: "2026-03-31T00:00:00.000Z"
+        })}\n`,
+        "utf8"
+      );
+
+      const created = await createJobMeta("review", { base: "main" }, env);
+      const globalState = await loadGlobalState(env);
+
+      expect(created.id).toBeDefined();
+      expect(globalState.jobs[created.id]).toBeDefined();
+    });
+  });
+
+  it("recovers from an old lock file owned by the current process", async () => {
+    await withTempHome(async (home, env) => {
+      const lockPath = path.join(home, ".state.lock");
+      await writeFile(
+        lockPath,
+        `${JSON.stringify({
+          token: "stale-token",
+          pid: process.pid,
+          createdAt: "2026-03-31T00:00:00.000Z"
+        })}\n`,
+        "utf8"
+      );
 
       const created = await createJobMeta("review", { base: "main" }, env);
       const globalState = await loadGlobalState(env);

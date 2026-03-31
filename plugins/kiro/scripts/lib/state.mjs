@@ -1,16 +1,9 @@
 import { randomUUID } from "node:crypto";
 import path from "node:path";
-import { mkdir, rm } from "node:fs/promises";
+import { open, readFile, rm, stat } from "node:fs/promises";
 import { setTimeout as delay } from "node:timers/promises";
 
-import {
-  ensureDir,
-  readJson,
-  readText,
-  resolveStateHome,
-  writeJson,
-  writeText
-} from "./fs.mjs";
+import { ensureDir, readJson, resolveStateHome, writeJson } from "./fs.mjs";
 
 export const DEFAULT_STATE = {
   version: 1,
@@ -30,14 +23,10 @@ function getNextJobSequence(jobs) {
 }
 
 const LOCK_RETRY_MS = 10;
-const LOCK_MISSING_PID_RETRIES = 20;
+const LOCK_STALE_MS = 1000;
 
 function getStateLockPath(env = process.env) {
   return path.join(resolveStateHome(env), ".state.lock");
-}
-
-function getStateLockPidPath(lockPath) {
-  return path.join(lockPath, "owner.pid");
 }
 
 function isPidAlive(pid) {
@@ -57,49 +46,118 @@ function isPidAlive(pid) {
   }
 }
 
+function parseLockContents(contents) {
+  try {
+    const parsed = JSON.parse(contents);
+
+    if (!parsed || typeof parsed !== "object") {
+      return null;
+    }
+
+    return parsed;
+  } catch {
+    return null;
+  }
+}
+
+async function readLockMetadata(lockPath) {
+  try {
+    const contents = await readFile(lockPath, "utf8");
+    return parseLockContents(contents);
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+async function getLockAgeMs(lockPath) {
+  try {
+    const lockStats = await stat(lockPath);
+    return Date.now() - lockStats.mtimeMs;
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return null;
+    }
+
+    throw error;
+  }
+}
+
+function isLockStale(metadata) {
+  const createdAtMs = Date.parse(metadata.createdAt);
+
+  if (Number.isFinite(createdAtMs) && Date.now() - createdAtMs > LOCK_STALE_MS) {
+    return true;
+  }
+
+  if (Number.isFinite(metadata.pid) && !isPidAlive(metadata.pid)) {
+    return true;
+  }
+
+  return false;
+}
+
 async function acquireStateLock(lockPath) {
-  const lockPidPath = getStateLockPidPath(lockPath);
-  let missingPidAttempts = 0;
+  const token = randomUUID();
+  const ownerPid = process.pid;
+  const createdAt = new Date().toISOString();
 
   for (;;) {
     try {
-      await mkdir(lockPath);
-      await writeText(lockPidPath, `${process.pid}\n`);
+      const handle = await open(lockPath, "wx");
+
+      try {
+        await handle.writeFile(
+          `${JSON.stringify({
+            token,
+            pid: ownerPid,
+            createdAt
+          })}\n`
+        );
+      } catch (error) {
+        await handle.close().catch(() => {});
+        await rm(lockPath, { force: true });
+        throw error;
+      }
+
+      await handle.close();
+
       return async () => {
-        await rm(lockPath, { recursive: true, force: true });
+        try {
+          const current = await readLockMetadata(lockPath);
+          if (current?.token === token) {
+            await rm(lockPath, { force: true });
+          }
+        } catch (error) {
+          if (error.code !== "ENOENT") {
+            throw error;
+          }
+        }
       };
     } catch (error) {
       if (error.code !== "EEXIST") {
         throw error;
       }
 
-      try {
-        const pidText = await readText(lockPidPath, "");
-        const ownerPid = Number.parseInt(pidText, 10);
+      const lockMetadata = await readLockMetadata(lockPath);
 
-        if (!Number.isFinite(ownerPid)) {
-          if (missingPidAttempts < LOCK_MISSING_PID_RETRIES) {
-            missingPidAttempts += 1;
-            await delay(LOCK_RETRY_MS);
-            continue;
-          }
+      if (lockMetadata == null) {
+        const lockAgeMs = await getLockAgeMs(lockPath);
 
-          await rm(lockPath, { recursive: true, force: true });
-          missingPidAttempts = 0;
+        if (lockAgeMs == null || lockAgeMs > LOCK_STALE_MS) {
+          await rm(lockPath, { force: true });
           continue;
         }
 
-        missingPidAttempts = 0;
+        await delay(LOCK_RETRY_MS);
+        continue;
+      }
 
-        if (!isPidAlive(ownerPid)) {
-          await rm(lockPath, { recursive: true, force: true });
-          continue;
-        }
-      } catch (statError) {
-        if (statError.code !== "ENOENT") {
-          throw statError;
-        }
-
+      if (isLockStale(lockMetadata)) {
+        await rm(lockPath, { force: true });
         continue;
       }
 
