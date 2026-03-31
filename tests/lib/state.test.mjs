@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { rm, utimes, writeFile } from "node:fs/promises";
+import { access, rm, utimes, writeFile } from "node:fs/promises";
 import path from "node:path";
 
 import { withTempHome } from "../helpers/temp-env.mjs";
@@ -7,8 +7,10 @@ import {
   DEFAULT_STATE,
   createJobMeta,
   getJobPaths,
+  getStatePaths,
   listJobMeta,
   loadGlobalState,
+  removeLockIfContentsMatch,
   readJobMeta,
   updateJobMeta
 } from "../../plugins/kiro/scripts/lib/state.mjs";
@@ -181,6 +183,76 @@ describe("job state persistence", () => {
 
       expect(created.id).toBeDefined();
       expect(globalState.jobs[created.id]).toBeDefined();
+    });
+  });
+
+  it("does not bootstrap state on read", async () => {
+    await withTempHome(async (home, env) => {
+      const { stateFile } = getStatePaths(env);
+
+      const loaded = await loadGlobalState(env);
+      const listed = await listJobMeta(env);
+
+      expect(loaded).toEqual(DEFAULT_STATE);
+      expect(listed).toEqual([]);
+
+      await expect(access(stateFile)).rejects.toMatchObject({
+        code: "ENOENT"
+      });
+    });
+  });
+
+  it("preserves existing written state on read", async () => {
+    await withTempHome(async (_home, env) => {
+      const { stateFile } = getStatePaths(env);
+      const seeded = {
+        version: 1,
+        config: {
+          timeoutMs: 123
+        },
+        jobs: {
+          job_1: {
+            command: "review",
+            status: "pending",
+            createdAt: "2026-04-01T00:00:00.000Z",
+            updatedAt: "2026-04-01T00:00:00.000Z",
+            sequence: 1
+          }
+        }
+      };
+
+      await writeFile(stateFile, `${JSON.stringify(seeded, null, 2)}\n`, "utf8");
+
+      const loaded = await loadGlobalState(env);
+      const listed = await listJobMeta(env);
+
+      expect(loaded).toEqual(seeded);
+      expect(listed).toHaveLength(1);
+      expect(listed[0].command).toBe("review");
+    });
+  });
+
+  it("does not delete a replaced lock file when recovering stale contents", async () => {
+    await withTempHome(async (home) => {
+      const lockPath = path.join(home, ".state.lock");
+      const staleContents = `${JSON.stringify({
+        token: "stale-token",
+        pid: 999999,
+        createdAt: "2026-03-31T00:00:00.000Z"
+      })}\n`;
+      const freshContents = `${JSON.stringify({
+        token: "fresh-token",
+        pid: process.pid,
+        createdAt: new Date().toISOString()
+      })}\n`;
+
+      await writeFile(lockPath, staleContents, "utf8");
+      await writeFile(lockPath, freshContents, "utf8");
+
+      const deleted = await removeLockIfContentsMatch(lockPath, staleContents);
+
+      expect(deleted).toBe(false);
+      await access(lockPath);
     });
   });
 });

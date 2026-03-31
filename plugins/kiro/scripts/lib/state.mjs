@@ -60,13 +60,33 @@ function parseLockContents(contents) {
   }
 }
 
-async function readLockMetadata(lockPath) {
+async function readLockSnapshot(lockPath) {
   try {
     const contents = await readFile(lockPath, "utf8");
-    return parseLockContents(contents);
+    const metadata = parseLockContents(contents);
+    const ageMs = await getLockAgeMs(lockPath);
+    return { contents, metadata, ageMs };
   } catch (error) {
     if (error.code === "ENOENT") {
       return null;
+    }
+
+    throw error;
+  }
+}
+
+export async function removeLockIfContentsMatch(lockPath, expectedContents) {
+  try {
+    const currentContents = await readFile(lockPath, "utf8");
+    if (currentContents !== expectedContents) {
+      return false;
+    }
+
+    await rm(lockPath, { force: true });
+    return true;
+  } catch (error) {
+    if (error.code === "ENOENT") {
+      return false;
     }
 
     throw error;
@@ -90,19 +110,19 @@ function getLockPid(metadata) {
   return Number.isFinite(metadata?.pid) ? metadata.pid : null;
 }
 
-async function shouldRecoverLock(lockPath, metadata) {
-  const lockAgeMs = await getLockAgeMs(lockPath);
-
-  if (metadata == null) {
-    return lockAgeMs != null && lockAgeMs > LOCK_STALE_MS;
+function shouldRecoverLockSnapshot(snapshot) {
+  if (snapshot == null) {
+    return false;
   }
 
+  const { metadata, ageMs } = snapshot;
   const pid = getLockPid(metadata);
+
   if (pid != null) {
     return !isPidAlive(pid);
   }
 
-  return lockAgeMs != null && lockAgeMs > LOCK_STALE_MS;
+  return ageMs != null && ageMs > LOCK_STALE_MS;
 }
 
 async function acquireStateLock(lockPath) {
@@ -132,8 +152,8 @@ async function acquireStateLock(lockPath) {
 
       return async () => {
         try {
-          const current = await readLockMetadata(lockPath);
-          if (current?.token === token) {
+          const current = await readLockSnapshot(lockPath);
+          if (current?.metadata?.token === token) {
             await rm(lockPath, { force: true });
           }
         } catch (error) {
@@ -147,11 +167,17 @@ async function acquireStateLock(lockPath) {
         throw error;
       }
 
-      const lockMetadata = await readLockMetadata(lockPath);
+      const lockSnapshot = await readLockSnapshot(lockPath);
 
-      if (await shouldRecoverLock(lockPath, lockMetadata)) {
-        await rm(lockPath, { force: true });
+      if (lockSnapshot == null) {
+        await delay(LOCK_RETRY_MS);
         continue;
+      }
+
+      if (shouldRecoverLockSnapshot(lockSnapshot)) {
+        if (await removeLockIfContentsMatch(lockPath, lockSnapshot.contents)) {
+          continue;
+        }
       }
 
       await delay(LOCK_RETRY_MS);
@@ -201,7 +227,7 @@ export async function ensureStateLayout(env = process.env) {
 }
 
 export async function loadGlobalState(env = process.env) {
-  const { stateFile } = await ensureStateLayout(env);
+  const { stateFile } = getStatePaths(env);
   return readJson(stateFile, structuredClone(DEFAULT_STATE));
 }
 
