@@ -96,6 +96,15 @@ describe("handoff document", () => {
       expect(snapshot.completed).toHaveLength(completed.length);
       expect(snapshot.attempts).toHaveLength(attempts.length);
       expect(visibleText).toContain("# Handoff");
+      expect(visibleText).toContain("## 目标");
+      expect(visibleText).toContain("## 状态：进行中");
+      expect(visibleText).toContain("## 进度");
+      expect(visibleText).toContain("### 已完成");
+      expect(visibleText).toContain("### 当前步骤");
+      expect(visibleText).toContain("### 待做");
+      expect(visibleText).toContain("## 尝试记录");
+      expect(visibleText).toContain("## 关键发现");
+      expect(visibleText).toContain("## 上下文快照");
       expect(visibleText).not.toContain("<!-- kiro-companion-state");
     });
   });

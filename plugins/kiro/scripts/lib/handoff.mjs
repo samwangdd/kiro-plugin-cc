@@ -5,6 +5,14 @@ import { readText, writeText } from "./fs.mjs";
 const STATE_PREFIX = "<!-- kiro-companion-state";
 const STATE_SUFFIX = "-->";
 const MAX_TOTAL_LINES = 200;
+const VISIBLE_LIMITS = {
+  completed: 20,
+  current: 10,
+  todo: 10,
+  attempts: 5,
+  findings: 10,
+  files: 10
+};
 
 function defaultSnapshot(projectRoot) {
   return {
@@ -57,7 +65,66 @@ function linesForAttempts(items) {
   return items.map((item) => `| ${item.attempt} | ${item.result} | ${item.reason} |`);
 }
 
+function linesWithOverflow(items, limit, renderItem, emptyLine, overflowLabel) {
+  if (items.length === 0) {
+    return [emptyLine];
+  }
+
+  const visibleItems = items.slice(0, limit).map(renderItem);
+  if (items.length <= limit) {
+    return visibleItems;
+  }
+
+  return [
+    ...visibleItems,
+    overflowLabel(items.length - limit)
+  ];
+}
+
 function buildVisibleLines(snapshot) {
+  const completedLines = linesWithOverflow(
+    snapshot.completed,
+    VISIBLE_LIMITS.completed,
+    (item) => `- [x] ${item}`,
+    "- [ ] 暂无",
+    (overflow) => `- … 还有 ${overflow} 项已完成`
+  );
+  const currentLines = linesWithOverflow(
+    snapshot.current,
+    VISIBLE_LIMITS.current,
+    (item) => `- [ ] ${item}`,
+    "- [ ] 暂无",
+    (overflow) => `- … 还有 ${overflow} 项当前步骤`
+  );
+  const todoLines = linesWithOverflow(
+    snapshot.todo,
+    VISIBLE_LIMITS.todo,
+    (item) => `- [ ] ${item}`,
+    "- [ ] 暂无",
+    (overflow) => `- … 还有 ${overflow} 项待做`
+  );
+  const attemptRows = linesWithOverflow(
+    snapshot.attempts,
+    VISIBLE_LIMITS.attempts,
+    (item) => `| ${item.attempt} | ${item.result} | ${item.reason} |`,
+    "| 暂无 | 暂无 | 暂无 |",
+    (overflow) => `| … 还有 ${overflow} 项 | … | … |`
+  );
+  const findingLines = linesWithOverflow(
+    snapshot.findings,
+    VISIBLE_LIMITS.findings,
+    (item) => `- ${item}`,
+    "- 暂无",
+    (overflow) => `- … 还有 ${overflow} 项关键发现`
+  );
+  const fileLines = linesWithOverflow(
+    snapshot.context.files,
+    VISIBLE_LIMITS.files,
+    (item) => `\`${item}\``,
+    "暂无",
+    (overflow) => `… 还有 ${overflow} 个文件`
+  );
+
   return [
     `# Handoff — ${snapshot.projectName}`,
     "",
@@ -69,31 +136,25 @@ function buildVisibleLines(snapshot) {
     "## 进度",
     "",
     "### 已完成",
-    ...linesForChecklist(snapshot.completed, true),
+    ...completedLines,
     "",
     "### 当前步骤",
-    ...linesForChecklist(snapshot.current, false),
+    ...currentLines,
     "",
     "### 待做",
-    ...linesForChecklist(snapshot.todo, false),
+    ...todoLines,
     "",
     "## 尝试记录",
     "| 尝试 | 结果 | 原因 |",
     "|------|------|------|",
-    ...linesForAttempts(snapshot.attempts.slice(-10)),
+    ...attemptRows,
     "",
     "## 关键发现",
-    ...(snapshot.findings.length === 0
-      ? ["- 暂无"]
-      : snapshot.findings.map((item) => `- ${item}`)),
+    ...findingLines,
     "",
     "## 上下文快照",
     `- **当前分支**：\`${snapshot.context.branch}\``,
-    `- **涉及文件**：${
-      snapshot.context.files.length
-        ? snapshot.context.files.map((item) => `\`${item}\``).join(", ")
-        : "暂无"
-    }`,
+    `- **涉及文件**：${fileLines.length === 1 && fileLines[0] === "暂无" ? "暂无" : fileLines.join(", ")}`,
     `- **依赖约束**：${snapshot.context.constraints || "暂无"}`,
     `- **开放问题**：${snapshot.context.openQuestions || "暂无"}`,
     "",
