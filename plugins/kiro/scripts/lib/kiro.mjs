@@ -8,6 +8,15 @@ function parseJson(text, fallback) {
   }
 }
 
+function isValidWhoami(value) {
+  return (
+    value &&
+    typeof value === "object" &&
+    typeof value.username === "string" &&
+    value.username.trim().length > 0
+  );
+}
+
 export function buildChatArgs({
   prompt,
   model = null,
@@ -116,13 +125,15 @@ export async function getSetupReport({
 
   const whoamiJson = parseJson(whoami.stdout, null);
   const modelList = parseJson(models.stdout, []);
+  const loggedIn = whoami.code === 0 && isValidWhoami(whoamiJson);
+  const modelsValid = models.code === 0 && Array.isArray(modelList);
 
   return {
-    ready: whoami.code === 0,
+    ready: Boolean(loggedIn && modelsValid),
     installed: true,
-    loggedIn: whoami.code === 0,
+    loggedIn: Boolean(loggedIn),
     version: version.stdout.trim(),
-    whoami: whoamiJson,
-    models: Array.isArray(modelList) ? modelList : []
+    whoami: loggedIn ? whoamiJson : null,
+    models: modelsValid ? modelList : []
   };
 }

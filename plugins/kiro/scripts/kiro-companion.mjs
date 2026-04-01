@@ -30,6 +30,15 @@ function readFlag(args, flag) {
   return true;
 }
 
+function rejectUnknownArgs(args) {
+  for (const arg of args) {
+    if (arg.startsWith("--")) {
+      throw new Error(`Unknown setup flag: ${arg}`);
+    }
+    throw new Error(`Unknown setup argument: ${arg}`);
+  }
+}
+
 const DEFAULT_DEPS = {
   write: defaultWrite,
   getSetupReport,
@@ -48,6 +57,7 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
 
   if (command === "setup") {
     const asJson = readFlag(args, "--json");
+    rejectUnknownArgs(args);
     const report = await deps.getSetupReport();
     deps.write(asJson ? `${JSON.stringify(report, null, 2)}\n` : deps.renderSetupReport(report));
     return report.ready ? 0 : 1;

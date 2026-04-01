@@ -58,6 +58,50 @@ describe("kiro runtime", () => {
     expect(report.models).toContain("auto");
     expect(report.whoami.username).toBe("sam@example.com");
   });
+
+  it("treats malformed whoami and model responses as not ready", async () => {
+    const run = async (args) => {
+      if (args[0] === "version") {
+        return { code: 0, stdout: "1.26.0\n", stderr: "" };
+      }
+
+      if (args[0] === "whoami") {
+        return { code: 0, stdout: "{not-json}\n", stderr: "" };
+      }
+
+      return { code: 0, stdout: "not-json\n", stderr: "" };
+    };
+
+    const report = await getSetupReport({ run });
+
+    expect(report.ready).toBe(false);
+    expect(report.loggedIn).toBe(false);
+    expect(report.whoami).toBeNull();
+    expect(report.models).toEqual([]);
+  });
+
+  it("treats model command failure as not ready", async () => {
+    const run = async (args) => {
+      if (args[0] === "version") {
+        return { code: 0, stdout: "1.26.0\n", stderr: "" };
+      }
+
+      if (args[0] === "whoami") {
+        return {
+          code: 0,
+          stdout: "{\"username\":\"sam@example.com\",\"loggedIn\":true}\n",
+          stderr: ""
+        };
+      }
+
+      return { code: 1, stdout: "", stderr: "boom" };
+    };
+
+    const report = await getSetupReport({ run });
+
+    expect(report.ready).toBe(false);
+    expect(report.loggedIn).toBe(true);
+  });
 });
 
 describe("setup command", () => {
@@ -81,5 +125,36 @@ describe("setup command", () => {
 
     expect(exitCode).toBe(0);
     expect(output).toContain("Ready: true");
+  });
+
+  it("renders setup report as json", async () => {
+    let output = "";
+
+    const exitCode = await runCli(["setup", "--json"], {
+      write: (text) => {
+        output += text;
+      },
+      getSetupReport: async () => ({
+        ready: true,
+        installed: true,
+        loggedIn: true,
+        version: "1.26.0",
+        whoami: { username: "sam@example.com" },
+        models: ["auto", "claude-sonnet-4.6"]
+      }),
+      renderSetupReport: () => "should not be used"
+    });
+
+    expect(exitCode).toBe(0);
+    expect(JSON.parse(output)).toMatchObject({
+      ready: true,
+      version: "1.26.0",
+      whoami: { username: "sam@example.com" }
+    });
+  });
+
+  it("rejects leftover setup args and unknown flags", async () => {
+    await expect(runCli(["setup", "extra"])).rejects.toThrow("Unknown setup argument: extra");
+    await expect(runCli(["setup", "--bogus"])).rejects.toThrow("Unknown setup flag: --bogus");
   });
 });
