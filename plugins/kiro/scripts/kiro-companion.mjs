@@ -3,6 +3,9 @@
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
+import { getSetupReport } from "./lib/kiro.mjs";
+import { renderSetupReport } from "./lib/render.mjs";
+
 const USAGE = [
   "Usage:",
   "  node plugins/kiro/scripts/kiro-companion.mjs setup [--json]",
@@ -17,13 +20,40 @@ function defaultWrite(text) {
   process.stdout.write(text);
 }
 
-export async function runCli(argv = process.argv.slice(2), deps = { write: defaultWrite }) {
-  if (argv.length === 0) {
+function readFlag(args, flag) {
+  const index = args.indexOf(flag);
+  if (index === -1) {
+    return false;
+  }
+
+  args.splice(index, 1);
+  return true;
+}
+
+const DEFAULT_DEPS = {
+  write: defaultWrite,
+  getSetupReport,
+  renderSetupReport
+};
+
+export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) {
+  const args = [...argv];
+
+  if (args.length === 0) {
     deps.write(`${USAGE}\n`);
     return 0;
   }
 
-  throw new Error(`Unknown command: ${argv[0]}`);
+  const command = args.shift();
+
+  if (command === "setup") {
+    const asJson = readFlag(args, "--json");
+    const report = await deps.getSetupReport();
+    deps.write(asJson ? `${JSON.stringify(report, null, 2)}\n` : deps.renderSetupReport(report));
+    return report.ready ? 0 : 1;
+  }
+
+  throw new Error(`Unknown command: ${command}`);
 }
 
 async function main() {
