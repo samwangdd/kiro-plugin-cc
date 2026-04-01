@@ -17,6 +17,14 @@ function isValidWhoami(value) {
   );
 }
 
+function isValidModelList(value) {
+  return (
+    Array.isArray(value) &&
+    value.length > 0 &&
+    value.every((item) => typeof item === "string" && item.trim().length > 0)
+  );
+}
+
 export function buildChatArgs({
   prompt,
   model = null,
@@ -126,7 +134,7 @@ export async function getSetupReport({
   const whoamiJson = parseJson(whoami.stdout, null);
   const modelList = parseJson(models.stdout, []);
   const loggedIn = whoami.code === 0 && isValidWhoami(whoamiJson);
-  const modelsValid = models.code === 0 && Array.isArray(modelList);
+  const modelsValid = models.code === 0 && isValidModelList(modelList);
 
   return {
     ready: Boolean(loggedIn && modelsValid),

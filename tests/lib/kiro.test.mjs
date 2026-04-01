@@ -1,7 +1,9 @@
+import { EventEmitter } from "node:events";
+
 import { describe, expect, it } from "vitest";
 
 import { runCli } from "../../plugins/kiro/scripts/kiro-companion.mjs";
-import { buildChatArgs, getSetupReport } from "../../plugins/kiro/scripts/lib/kiro.mjs";
+import { buildChatArgs, getSetupReport, runKiro } from "../../plugins/kiro/scripts/lib/kiro.mjs";
 
 describe("kiro runtime", () => {
   it("builds non-interactive chat args for review and rescue", () => {
@@ -21,6 +23,61 @@ describe("kiro runtime", () => {
       "kiro-reviewer",
       "Review this diff"
     ]);
+  });
+
+  it("builds resume chat args", () => {
+    expect(
+      buildChatArgs({
+        prompt: "Continue the rescue",
+        model: "claude-sonnet-4.6",
+        agent: "kiro-rescuer",
+        resume: true
+      })
+    ).toEqual([
+      "chat",
+      "--resume",
+      "--model",
+      "claude-sonnet-4.6",
+      "--agent",
+      "kiro-rescuer",
+      "Continue the rescue"
+    ]);
+  });
+
+  it("resolves runKiro success and timeout paths", async () => {
+    const successfulChild = new EventEmitter();
+    successfulChild.stdout = new EventEmitter();
+    successfulChild.stderr = new EventEmitter();
+    successfulChild.kill = () => true;
+
+    const success = runKiro(["version"], {
+      spawnImpl: () => {
+        queueMicrotask(() => {
+          successfulChild.stdout.emit("data", Buffer.from("1.26.0\n"));
+          successfulChild.emit("close", 0);
+        });
+
+        return successfulChild;
+      }
+    });
+
+    await expect(success).resolves.toEqual({
+      code: 0,
+      stdout: "1.26.0\n",
+      stderr: ""
+    });
+
+    const timeoutChild = new EventEmitter();
+    timeoutChild.stdout = new EventEmitter();
+    timeoutChild.stderr = new EventEmitter();
+    timeoutChild.kill = () => true;
+
+    await expect(
+      runKiro(["version"], {
+        spawnImpl: () => timeoutChild,
+        timeoutMs: 1
+      })
+    ).rejects.toThrow("kiro-cli timed out after 1ms");
   });
 
   it("assembles setup state from version, whoami, and list-models", async () => {
@@ -78,6 +135,96 @@ describe("kiro runtime", () => {
     expect(report.loggedIn).toBe(false);
     expect(report.whoami).toBeNull();
     expect(report.models).toEqual([]);
+  });
+
+  it("rejects blank usernames and invalid model payloads", async () => {
+    const blankUsernameRun = async (args) => {
+      if (args[0] === "version") {
+        return { code: 0, stdout: "1.26.0\n", stderr: "" };
+      }
+
+      if (args[0] === "whoami") {
+        return {
+          code: 0,
+          stdout: "{\"username\":\"   \",\"loggedIn\":true}\n",
+          stderr: ""
+        };
+      }
+
+      return { code: 0, stdout: "[\"auto\"]\n", stderr: "" };
+    };
+
+    const missingUsernameRun = async (args) => {
+      if (args[0] === "version") {
+        return { code: 0, stdout: "1.26.0\n", stderr: "" };
+      }
+
+      if (args[0] === "whoami") {
+        return {
+          code: 0,
+          stdout: "{\"loggedIn\":true}\n",
+          stderr: ""
+        };
+      }
+
+      return { code: 0, stdout: "[\"auto\"]\n", stderr: "" };
+    };
+
+    const emptyModelsRun = async (args) => {
+      if (args[0] === "version") {
+        return { code: 0, stdout: "1.26.0\n", stderr: "" };
+      }
+
+      if (args[0] === "whoami") {
+        return {
+          code: 0,
+          stdout: "{\"username\":\"sam@example.com\",\"loggedIn\":true}\n",
+          stderr: ""
+        };
+      }
+
+      return { code: 0, stdout: "[]\n", stderr: "" };
+    };
+
+    const badModelEntriesRun = async (args) => {
+      if (args[0] === "version") {
+        return { code: 0, stdout: "1.26.0\n", stderr: "" };
+      }
+
+      if (args[0] === "whoami") {
+        return {
+          code: 0,
+          stdout: "{\"username\":\"sam@example.com\",\"loggedIn\":true}\n",
+          stderr: ""
+        };
+      }
+
+      return { code: 0, stdout: "[\"auto\",\"\"]\n", stderr: "" };
+    };
+
+    await expect(getSetupReport({ run: blankUsernameRun })).resolves.toMatchObject({
+      ready: false,
+      loggedIn: false,
+      whoami: null
+    });
+
+    await expect(getSetupReport({ run: missingUsernameRun })).resolves.toMatchObject({
+      ready: false,
+      loggedIn: false,
+      whoami: null
+    });
+
+    await expect(getSetupReport({ run: emptyModelsRun })).resolves.toMatchObject({
+      ready: false,
+      loggedIn: true,
+      models: []
+    });
+
+    await expect(getSetupReport({ run: badModelEntriesRun })).resolves.toMatchObject({
+      ready: false,
+      loggedIn: true,
+      models: []
+    });
   });
 
   it("treats model command failure as not ready", async () => {
@@ -156,5 +303,13 @@ describe("setup command", () => {
   it("rejects leftover setup args and unknown flags", async () => {
     await expect(runCli(["setup", "extra"])).rejects.toThrow("Unknown setup argument: extra");
     await expect(runCli(["setup", "--bogus"])).rejects.toThrow("Unknown setup flag: --bogus");
+  });
+
+  it("rejects not implemented dispatcher commands explicitly", async () => {
+    await expect(runCli(["review"])).rejects.toThrow("Not implemented yet: review");
+    await expect(runCli(["rescue"])).rejects.toThrow("Not implemented yet: rescue");
+    await expect(runCli(["status"])).rejects.toThrow("Not implemented yet: status");
+    await expect(runCli(["result"])).rejects.toThrow("Not implemented yet: result");
+    await expect(runCli(["cancel"])).rejects.toThrow("Not implemented yet: cancel");
   });
 });

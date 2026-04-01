@@ -39,6 +39,8 @@ function rejectUnknownArgs(args) {
   }
 }
 
+const NOT_IMPLEMENTED_COMMANDS = new Set(["review", "rescue", "status", "result", "cancel"]);
+
 const DEFAULT_DEPS = {
   write: defaultWrite,
   getSetupReport,
@@ -61,6 +63,10 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
     const report = await deps.getSetupReport();
     deps.write(asJson ? `${JSON.stringify(report, null, 2)}\n` : deps.renderSetupReport(report));
     return report.ready ? 0 : 1;
+  }
+
+  if (NOT_IMPLEMENTED_COMMANDS.has(command)) {
+    throw new Error(`Not implemented yet: ${command}`);
   }
 
   throw new Error(`Unknown command: ${command}`);
