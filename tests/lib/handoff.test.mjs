@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 import { withTempProject } from "../helpers/temp-env.mjs";
@@ -106,6 +106,115 @@ describe("handoff document", () => {
       expect(visibleText).toContain("## 关键发现");
       expect(visibleText).toContain("## 上下文快照");
       expect(visibleText).not.toContain("<!-- kiro-companion-state");
+    });
+  });
+
+  it("round-trips hidden state when content contains comment terminators", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeHandoff(projectRoot, {
+        goal: "Finish --> safely",
+        status: "进行中",
+        completed: [],
+        current: ["Handle --> safely"],
+        todo: [],
+        attempts: [],
+        findings: ["Need to preserve --> inside state"],
+        context: {
+          branch: "feat/kiro-companion",
+          files: ["plugins/kiro/scripts/lib/handoff.mjs"],
+          constraints: "Keep hidden state intact -->",
+          openQuestions: "None"
+        }
+      });
+
+      const snapshot = await readHandoff(projectRoot);
+      const fullText = await readFile(getHandoffPath(projectRoot), "utf8");
+
+      expect(snapshot.goal).toBe("Finish --> safely");
+      expect(snapshot.current[0]).toBe("Handle --> safely");
+      expect(snapshot.findings[0]).toBe("Need to preserve --> inside state");
+      expect(snapshot.context.constraints).toBe("Keep hidden state intact -->");
+      expect(fullText).toContain("<!-- kiro-companion-state");
+    });
+  });
+
+  it("keeps the file within budget when visible text contains newlines", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeHandoff(projectRoot, {
+        goal: "Line one\nLine two\nLine three",
+        status: "进行中",
+        completed: ["Item one\nItem two"],
+        current: ["Current one\nCurrent two"],
+        todo: ["Todo one\nTodo two"],
+        attempts: [
+          {
+            attempt: "Attempt one\nAttempt two",
+            result: "成功",
+            reason: "Reason one\nReason two"
+          }
+        ],
+        findings: ["Finding one\nFinding two"],
+        context: {
+          branch: "feat/kiro-companion",
+          files: ["src/one\nsrc/two"],
+          constraints: "Constraint one\nConstraint two",
+          openQuestions: "Question one\nQuestion two"
+        }
+      });
+
+      const fullText = await readFile(getHandoffPath(projectRoot), "utf8");
+
+      expect(fullText.split("\n").length).toBeLessThanOrEqual(200);
+      expect(fullText).toContain("Line one Line two Line three");
+      expect(fullText).not.toContain("Line one\nLine two\nLine three");
+    });
+  });
+
+  it("fills missing nested context defaults when reading hidden state", async () => {
+    await withTempProject(async (projectRoot) => {
+      await mkdir(`${projectRoot}/.kiro-companion`, { recursive: true });
+      const stateBlock = JSON.stringify({
+        goal: "Ship Kiro companion",
+        context: {
+          branch: "feat/kiro-companion"
+        }
+      });
+
+      await writeFile(
+        getHandoffPath(projectRoot),
+        `# Handoff — kiro-companion-project\n\n<!-- kiro-companion-state ${stateBlock} -->\n`,
+        "utf8"
+      );
+
+      const snapshot = await readHandoff(projectRoot);
+
+      expect(snapshot.goal).toBe("Ship Kiro companion");
+      expect(snapshot.context.branch).toBe("feat/kiro-companion");
+      expect(snapshot.context.files).toEqual([]);
+      expect(snapshot.context.constraints).toBe("");
+      expect(snapshot.context.openQuestions).toBe("");
+    });
+  });
+
+  it("escapes pipe characters in attempts table cells", async () => {
+    await withTempProject(async (projectRoot) => {
+      await writeHandoff(projectRoot, {
+        goal: "Ship Kiro companion",
+        status: "进行中",
+        attempts: [
+          {
+            attempt: "Check | render",
+            result: "成功 | maybe",
+            reason: "Reason | one"
+          }
+        ]
+      });
+
+      const visibleText = await readHandoffText(projectRoot);
+
+      expect(visibleText).toContain("Check \\| render");
+      expect(visibleText).toContain("成功 \\| maybe");
+      expect(visibleText).toContain("Reason \\| one");
     });
   });
 });

@@ -34,6 +34,73 @@ function defaultSnapshot(projectRoot) {
   };
 }
 
+function normalizeVisibleText(value) {
+  return String(value ?? "")
+    .replace(/\s+/gu, " ")
+    .trim();
+}
+
+function normalizeVisibleList(items) {
+  return items.map((item) => normalizeVisibleText(item));
+}
+
+function escapeMarkdownTableCell(value) {
+  return normalizeVisibleText(value).replace(/\|/gu, "\\|");
+}
+
+function mergeContext(context = {}, defaults) {
+  return {
+    ...defaults,
+    ...(context || {})
+  };
+}
+
+function buildSnapshot(projectRoot, input = {}) {
+  const base = defaultSnapshot(projectRoot);
+  const inputContext = input.context || {};
+
+  return {
+    ...base,
+    ...input,
+    goal: normalizeVisibleText(input.goal ?? base.goal),
+    status: normalizeVisibleText(input.status ?? base.status),
+    completed: normalizeVisibleList(input.completed ?? base.completed),
+    current: normalizeVisibleList(input.current ?? base.current),
+    todo: normalizeVisibleList(input.todo ?? base.todo),
+    attempts: (input.attempts ?? base.attempts).map((item) => ({
+      attempt: normalizeVisibleText(item.attempt),
+      result: normalizeVisibleText(item.result),
+      reason: normalizeVisibleText(item.reason)
+    })),
+    findings: normalizeVisibleList(input.findings ?? base.findings),
+    context: {
+      ...base.context,
+      ...inputContext,
+      branch: normalizeVisibleText(inputContext.branch ?? base.context.branch),
+      files: normalizeVisibleList(inputContext.files ?? base.context.files),
+      constraints: normalizeVisibleText(
+        inputContext.constraints ?? base.context.constraints
+      ),
+      openQuestions: normalizeVisibleText(
+        inputContext.openQuestions ?? base.context.openQuestions
+      )
+    },
+    updatedAt: new Date().toISOString()
+  };
+}
+
+function encodeHiddenState(snapshot) {
+  return Buffer.from(JSON.stringify(snapshot), "utf8").toString("base64url");
+}
+
+function decodeHiddenState(encoded) {
+  try {
+    return JSON.parse(Buffer.from(encoded, "base64url").toString("utf8"));
+  } catch {
+    return JSON.parse(encoded);
+  }
+}
+
 function parseHiddenState(text, projectRoot) {
   const match = text.match(/<!-- kiro-companion-state\s*([\s\S]*?)-->/);
 
@@ -42,19 +109,30 @@ function parseHiddenState(text, projectRoot) {
   }
 
   try {
+    const parsed = decodeHiddenState(match[1]);
     return {
       ...defaultSnapshot(projectRoot),
-      ...JSON.parse(match[1])
+      ...parsed,
+      context: mergeContext(parsed.context, defaultSnapshot(projectRoot).context)
     };
   } catch {
-    return defaultSnapshot(projectRoot);
+    try {
+      const parsed = JSON.parse(match[1]);
+      return {
+        ...defaultSnapshot(projectRoot),
+        ...parsed,
+        context: mergeContext(parsed.context, defaultSnapshot(projectRoot).context)
+      };
+    } catch {
+      return defaultSnapshot(projectRoot);
+    }
   }
 }
 
 function linesForChecklist(items, checked) {
   return items.length === 0
     ? ["- [ ] 暂无"]
-    : items.map((item) => `- [${checked ? "x" : " "}] ${item}`);
+    : items.map((item) => `- [${checked ? "x" : " "}] ${normalizeVisibleText(item)}`);
 }
 
 function linesForAttempts(items) {
@@ -62,7 +140,12 @@ function linesForAttempts(items) {
     return ["| 暂无 | 暂无 | 暂无 |"];
   }
 
-  return items.map((item) => `| ${item.attempt} | ${item.result} | ${item.reason} |`);
+  return items.map((item) => {
+    const attempt = escapeMarkdownTableCell(item.attempt);
+    const result = escapeMarkdownTableCell(item.result);
+    const reason = escapeMarkdownTableCell(item.reason);
+    return `| ${attempt} | ${result} | ${reason} |`;
+  });
 }
 
 function linesWithOverflow(items, limit, renderItem, emptyLine, overflowLabel) {
@@ -85,42 +168,45 @@ function buildVisibleLines(snapshot) {
   const completedLines = linesWithOverflow(
     snapshot.completed,
     VISIBLE_LIMITS.completed,
-    (item) => `- [x] ${item}`,
+    (item) => `- [x] ${normalizeVisibleText(item)}`,
     "- [ ] 暂无",
     (overflow) => `- … 还有 ${overflow} 项已完成`
   );
   const currentLines = linesWithOverflow(
     snapshot.current,
     VISIBLE_LIMITS.current,
-    (item) => `- [ ] ${item}`,
+    (item) => `- [ ] ${normalizeVisibleText(item)}`,
     "- [ ] 暂无",
     (overflow) => `- … 还有 ${overflow} 项当前步骤`
   );
   const todoLines = linesWithOverflow(
     snapshot.todo,
     VISIBLE_LIMITS.todo,
-    (item) => `- [ ] ${item}`,
+    (item) => `- [ ] ${normalizeVisibleText(item)}`,
     "- [ ] 暂无",
     (overflow) => `- … 还有 ${overflow} 项待做`
   );
   const attemptRows = linesWithOverflow(
     snapshot.attempts,
     VISIBLE_LIMITS.attempts,
-    (item) => `| ${item.attempt} | ${item.result} | ${item.reason} |`,
+    (item) =>
+      `| ${escapeMarkdownTableCell(item.attempt)} | ${escapeMarkdownTableCell(
+        item.result
+      )} | ${escapeMarkdownTableCell(item.reason)} |`,
     "| 暂无 | 暂无 | 暂无 |",
     (overflow) => `| … 还有 ${overflow} 项 | … | … |`
   );
   const findingLines = linesWithOverflow(
     snapshot.findings,
     VISIBLE_LIMITS.findings,
-    (item) => `- ${item}`,
+    (item) => `- ${normalizeVisibleText(item)}`,
     "- 暂无",
     (overflow) => `- … 还有 ${overflow} 项关键发现`
   );
   const fileLines = linesWithOverflow(
     snapshot.context.files,
     VISIBLE_LIMITS.files,
-    (item) => `\`${item}\``,
+    (item) => `\`${normalizeVisibleText(item)}\``,
     "暂无",
     (overflow) => `… 还有 ${overflow} 个文件`
   );
@@ -129,9 +215,9 @@ function buildVisibleLines(snapshot) {
     `# Handoff — ${snapshot.projectName}`,
     "",
     "## 目标",
-    snapshot.goal,
+    normalizeVisibleText(snapshot.goal),
     "",
-    `## 状态：${snapshot.status}`,
+    `## 状态：${normalizeVisibleText(snapshot.status)}`,
     "",
     "## 进度",
     "",
@@ -153,13 +239,13 @@ function buildVisibleLines(snapshot) {
     ...findingLines,
     "",
     "## 上下文快照",
-    `- **当前分支**：\`${snapshot.context.branch}\``,
+    `- **当前分支**：\`${normalizeVisibleText(snapshot.context.branch)}\``,
     `- **涉及文件**：${fileLines.length === 1 && fileLines[0] === "暂无" ? "暂无" : fileLines.join(", ")}`,
-    `- **依赖约束**：${snapshot.context.constraints || "暂无"}`,
-    `- **开放问题**：${snapshot.context.openQuestions || "暂无"}`,
+    `- **依赖约束**：${normalizeVisibleText(snapshot.context.constraints) || "暂无"}`,
+    `- **开放问题**：${normalizeVisibleText(snapshot.context.openQuestions) || "暂无"}`,
     "",
     "---",
-    `最后更新：${snapshot.updatedAt}`
+    `最后更新：${normalizeVisibleText(snapshot.updatedAt)}`
   ];
 }
 
@@ -168,20 +254,11 @@ export function getHandoffPath(projectRoot) {
 }
 
 export function renderHandoff(projectRoot, input = {}) {
-  const base = defaultSnapshot(projectRoot);
-  const snapshot = {
-    ...base,
-    ...input,
-    context: {
-      ...base.context,
-      ...(input.context || {})
-    },
-    updatedAt: new Date().toISOString()
-  };
+  const snapshot = buildSnapshot(projectRoot, input);
 
   const hiddenLines = [
     `${STATE_PREFIX}`,
-    JSON.stringify(snapshot),
+    encodeHiddenState(snapshot),
     STATE_SUFFIX
   ];
   const maxVisibleLines = Math.max(0, MAX_TOTAL_LINES - hiddenLines.length - 2);
