@@ -24,3 +24,23 @@ export function renderSetupReport(report) {
 
   return `${lines.join("\n")}\n`;
 }
+
+export function renderReviewReport(payload) {
+  const lines = [
+    `Review verdict: ${payload.verdict}`,
+    "",
+    `Summary: ${payload.summary}`,
+    ""
+  ];
+  if (payload.findings.length === 0) {
+    lines.push("Findings: none");
+  } else {
+    lines.push("Findings:");
+    for (const finding of payload.findings) {
+      const location = finding.file ? ` ${finding.file}${finding.line ? `:${finding.line}` : ""}` : "";
+      lines.push(`- [${finding.severity}]${location} ${finding.title}`);
+      lines.push(`  ${finding.details}`);
+    }
+  }
+  return `${lines.join("\n")}\n`;
+}

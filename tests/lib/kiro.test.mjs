@@ -306,7 +306,6 @@ describe("setup command", () => {
   });
 
   it("rejects not implemented dispatcher commands explicitly", async () => {
-    await expect(runCli(["review"])).rejects.toThrow("Not implemented yet: review");
     await expect(runCli(["rescue"])).rejects.toThrow("Not implemented yet: rescue");
     await expect(runCli(["status"])).rejects.toThrow("Not implemented yet: status");
     await expect(runCli(["result"])).rejects.toThrow("Not implemented yet: result");

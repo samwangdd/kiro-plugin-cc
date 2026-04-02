@@ -3,8 +3,11 @@
 import process from "node:process";
 import { pathToFileURL } from "node:url";
 
-import { getSetupReport } from "./lib/kiro.mjs";
-import { renderSetupReport } from "./lib/render.mjs";
+import { readHandoffText } from "./lib/handoff.mjs";
+import { collectReviewContext } from "./lib/git.mjs";
+import { buildChatArgs, getSetupReport, runKiro } from "./lib/kiro.mjs";
+import { buildReviewPrompt, loadReviewAssets, parseReviewOutput } from "./lib/prompts.mjs";
+import { renderReviewReport, renderSetupReport } from "./lib/render.mjs";
 
 const USAGE = [
   "Usage:",
@@ -25,9 +28,21 @@ function readFlag(args, flag) {
   if (index === -1) {
     return false;
   }
-
   args.splice(index, 1);
   return true;
+}
+
+function readOption(args, flag) {
+  const index = args.indexOf(flag);
+  if (index === -1) {
+    return null;
+  }
+  const value = args[index + 1];
+  if (!value) {
+    throw new Error(`Missing value for ${flag}`);
+  }
+  args.splice(index, 2);
+  return value;
 }
 
 function rejectUnknownArgs(args) {
@@ -39,12 +54,19 @@ function rejectUnknownArgs(args) {
   }
 }
 
-const NOT_IMPLEMENTED_COMMANDS = new Set(["review", "rescue", "status", "result", "cancel"]);
+const NOT_IMPLEMENTED_COMMANDS = new Set(["rescue", "status", "result", "cancel"]);
 
 const DEFAULT_DEPS = {
   write: defaultWrite,
   getSetupReport,
-  renderSetupReport
+  renderSetupReport,
+  collectReviewContext,
+  readHandoffText,
+  loadReviewAssets,
+  buildReviewPrompt,
+  runReviewChat: (prompt) => runKiro(buildChatArgs({ prompt })),
+  parseReviewOutput,
+  renderReviewReport
 };
 
 export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) {
@@ -63,6 +85,23 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
     const report = await deps.getSetupReport();
     deps.write(asJson ? `${JSON.stringify(report, null, 2)}\n` : deps.renderSetupReport(report));
     return report.ready ? 0 : 1;
+  }
+
+  if (command === "review") {
+    const base = readOption(args, "--base");
+    const reviewContext = await deps.collectReviewContext({ base });
+    const handoffText = await deps.readHandoffText(process.cwd());
+    const assets = await deps.loadReviewAssets();
+    const prompt = deps.buildReviewPrompt({
+      template: assets.template,
+      schema: assets.schema,
+      handoffText,
+      reviewContext
+    });
+    const response = await deps.runReviewChat(prompt);
+    const parsed = deps.parseReviewOutput(response.stdout, assets.schema);
+    deps.write(deps.renderReviewReport(parsed));
+    return 0;
   }
 
   if (NOT_IMPLEMENTED_COMMANDS.has(command)) {
