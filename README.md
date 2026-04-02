@@ -22,13 +22,12 @@ Inspired by [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc).
 
 | Command | Description |
 |---------|-------------|
-| `/kiro:setup` | Set up the plugin |
+| `/kiro:setup` | Check environment readiness |
 | `/kiro:review` | Code review on local changes |
 | `/kiro:rescue` | Delegate a task to Kiro |
 | `/kiro:status` | Show running jobs |
 | `/kiro:result` | Show output of a finished job |
 | `/kiro:cancel` | Cancel a background job |
-| `/kiro:setup` | Check environment readiness |
 
 ## Quick Start
 
