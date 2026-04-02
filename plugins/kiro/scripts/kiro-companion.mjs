@@ -223,7 +223,12 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
     }
 
     if (command === "rescue" && !asBackground) {
+      const jobsBefore = await deps.listJobMeta();
       const result = await executeRescueJob(options, deps);
+      const jobsAfter = await deps.listJobMeta();
+      if (jobsAfter.length <= jobsBefore.length) {
+        deps.write("[WARNING] No new kiro rescue job produced — kiro-cli may not have been invoked.\n");
+      }
       deps.write(result.stdout);
       return result.code === 0 ? 0 : 1;
     }

@@ -13,12 +13,43 @@ Inspired by [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc).
 
 ## Install
 
+### Option 1: Install from Claude Code Marketplace
 ```bash
 /plugin marketplace add samwangdd/kiro-plugin-cc
 /plugin install kiro@samwangdd-kiro
 /reload-plugins
 /kiro:setup
 ```
+
+### Option 2: Install from GitHub Repository
+```bash
+/plugin marketplace add https://github.com/samwangdd/kiro-plugin-cc
+/plugin install kiro@samwangdd-kiro
+/reload-plugins
+/kiro:setup
+```
+
+### Option 3: Install as a Local Project Plugin
+1. Clone the repository:
+   ```bash
+   git clone https://github.com/samwangdd/kiro-plugin-cc.git
+   cd kiro-plugin-cc
+   ```
+
+2. Install the plugin:
+   ```bash
+   /plugin install local
+   ```
+
+3. Reload plugins:
+   ```bash
+   /reload-plugins
+   ```
+
+4. Set up the plugin:
+   ```bash
+   /kiro:setup
+   ```
 
 `/kiro:setup` checks your environment. If Kiro is not found, install it from [kiro.dev](https://kiro.dev) and run `!kiro login`.
 
