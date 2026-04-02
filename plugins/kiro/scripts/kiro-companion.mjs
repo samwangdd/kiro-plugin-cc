@@ -7,7 +7,7 @@ import { readText } from "./lib/fs.mjs";
 import { readHandoff, readHandoffText, writeHandoff } from "./lib/handoff.mjs";
 import { collectReviewContext } from "./lib/git.mjs";
 import { cancelTrackedJob, runTrackedJob, startDetachedJob } from "./lib/job-control.mjs";
-import { buildChatArgs, getSetupReport, runKiro } from "./lib/kiro.mjs";
+import { buildChatArgs, getSetupReport, login, runKiro } from "./lib/kiro.mjs";
 import { buildRescuePrompt, buildReviewPrompt, loadReviewAssets, parseReviewOutput } from "./lib/prompts.mjs";
 import {
   renderCancelReport,
@@ -185,7 +185,7 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
   if (command === "setup") {
     const asJson = readFlag(args, "--json");
     rejectUnknownArgs(args);
-    const report = await deps.getSetupReport();
+    const report = await deps.getSetupReport({ autoLogin: true });
     deps.write(asJson ? `${JSON.stringify(report, null, 2)}\n` : deps.renderSetupReport(report));
     return report.ready ? 0 : 1;
   }

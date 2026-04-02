@@ -10,7 +10,7 @@ export function renderSetupReport(report) {
     `Installed: ${report.installed ? "yes" : "no"}`,
     `Authenticated: ${report.loggedIn ? "yes" : "no"}`,
     `Version: ${report.version || "missing"}`,
-    `User: ${report.whoami?.username || "not signed in"}`,
+    `User: ${report.whoami?.username || report.whoami?.email || "not signed in"}`,
     `Models: ${listOrFallback(report.models)}`
   ];
 
@@ -19,7 +19,7 @@ export function renderSetupReport(report) {
   }
 
   if (report.installed && !report.loggedIn) {
-    lines.push("Authenticate with: kiro-cli login");
+    lines.push("Auto-login failed. Run manually: kiro-cli login");
   }
 
   return `${lines.join("\n")}\n`;
