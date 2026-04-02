@@ -1,10 +1,8 @@
-import Ajv from "ajv";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { readJson, readText } from "./fs.mjs";
 
 const ROOT_DIR = path.resolve(fileURLToPath(new URL("../..", import.meta.url)));
-const ajv = new Ajv({ allErrors: true });
 
 function extractJsonBlock(text) {
   const firstBrace = text.indexOf("{");
@@ -45,9 +43,11 @@ export function buildRescuePrompt({ taskText, handoffText }) {
 
 export function parseReviewOutput(stdout, schema) {
   const parsed = JSON.parse(extractJsonBlock(stdout));
-  const validate = ajv.compile(schema);
-  if (!validate(parsed)) {
-    throw new Error(ajv.errorsText(validate.errors));
+  const required = (schema && schema.required) || [];
+  for (const key of required) {
+    if (!(key in parsed)) {
+      throw new Error(`Missing required field: ${key}`);
+    }
   }
   return parsed;
 }
