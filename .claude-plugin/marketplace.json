@@ -1,0 +1,21 @@
+{
+  "name": "kiro-companion",
+  "owner": {
+    "name": "sammore"
+  },
+  "metadata": {
+    "description": "Use Kiro from Claude Code for review and rescue workflows.",
+    "version": "0.1.0"
+  },
+  "plugins": [
+    {
+      "name": "kiro",
+      "description": "Run kiro-cli review and rescue workflows from Claude Code.",
+      "version": "0.1.0",
+      "author": {
+        "name": "sammore"
+      },
+      "source": "./plugins/kiro"
+    }
+  ]
+}
