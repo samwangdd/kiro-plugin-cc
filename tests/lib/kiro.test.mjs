@@ -304,11 +304,4 @@ describe("setup command", () => {
     await expect(runCli(["setup", "extra"])).rejects.toThrow("Unknown setup argument: extra");
     await expect(runCli(["setup", "--bogus"])).rejects.toThrow("Unknown setup flag: --bogus");
   });
-
-  it("rejects not implemented dispatcher commands explicitly", async () => {
-    await expect(runCli(["rescue"])).rejects.toThrow("Not implemented yet: rescue");
-    await expect(runCli(["status"])).rejects.toThrow("Not implemented yet: status");
-    await expect(runCli(["result"])).rejects.toThrow("Not implemented yet: result");
-    await expect(runCli(["cancel"])).rejects.toThrow("Not implemented yet: cancel");
-  });
 });

@@ -44,3 +44,23 @@ export function renderReviewReport(payload) {
   }
   return `${lines.join("\n")}\n`;
 }
+
+export function renderRescueStartReport(job) {
+  return `Started ${job.id}\n`;
+}
+
+export function renderStatusReport(report) {
+  const lines = ["Kiro jobs", ""];
+  for (const job of report.jobs) {
+    lines.push(`- ${job.id} | ${job.command} | ${job.status} | ${job.updatedAt || job.createdAt}`);
+  }
+  return `${lines.join("\n")}\n`;
+}
+
+export function renderResultReport(report) {
+  return `Job: ${report.job.id}\nStatus: ${report.job.status}\n\n${report.logText}\n`;
+}
+
+export function renderCancelReport(report) {
+  return `Cancelled ${report.job.id} (${report.job.failureReason})\n`;
+}
