@@ -1,8 +1,10 @@
 # Kiro Plugin for Claude Code
 
+[中文文档](docs/README.zh-CN.md)
+
 Use [Kiro](https://kiro.dev) inside Claude Code for code reviews and task delegation.
 
-Inspired by [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc). [中文文档](docs/README.zh-CN.md)
+Inspired by [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc). 
 
 ## Prerequisites
 
