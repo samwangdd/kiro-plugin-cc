@@ -1,13 +1,45 @@
-# Kiro Companion for Claude Code
+# Kiro Plugin for Claude Code
 
-Kiro Companion lets Claude Code run `kiro-cli` for:
+Use [Kiro](https://kiro.dev) inside Claude Code for code reviews and task delegation.
 
-- `/kiro:review`
-- `/kiro:rescue`
-- `/kiro:setup`
-- `/kiro:status`
-- `/kiro:result`
-- `/kiro:cancel`
+Inspired by [openai/codex-plugin-cc](https://github.com/openai/codex-plugin-cc). [中文文档](docs/README.zh-CN.md)
+
+## Prerequisites
+
+- [Kiro CLI](https://kiro.dev) installed and authenticated
+- Node.js >= 20.11
+
+## Install
+
+```bash
+/plugin marketplace add samwangdd/kiro-plugin-cc
+/plugin install kiro@samwangdd-kiro
+/reload-plugins
+/kiro:setup
+```
+
+`/kiro:setup` checks your environment. If Kiro is not found, install it from [kiro.dev](https://kiro.dev) and run `!kiro login`.
+
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `/kiro:review` | Code review on local changes |
+| `/kiro:rescue` | Delegate a task to Kiro |
+| `/kiro:status` | Show running jobs |
+| `/kiro:result` | Show output of a finished job |
+| `/kiro:cancel` | Cancel a background job |
+| `/kiro:setup` | Check environment readiness |
+
+## Quick Start
+
+```bash
+/kiro:review
+/kiro:rescue investigate why tests are failing
+/kiro:rescue --background fix the login bug
+/kiro:status
+/kiro:result
+```
 
 ## Development
 
@@ -16,13 +48,6 @@ npm install
 npm test
 ```
 
-## Local plugin install
+## License
 
-1. Install the repository as a local Claude Code plugin.
-2. Run `/kiro:setup`.
-3. Start with `/kiro:review` or `/kiro:rescue`.
-
-## Runtime files
-
-- Global state: `~/.kiro-companion/`
-- Project handoff: `.kiro-companion/handoff.md`
+Apache-2.0
