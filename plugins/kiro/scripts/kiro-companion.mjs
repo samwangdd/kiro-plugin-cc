@@ -15,7 +15,8 @@ import {
   renderResultReport,
   renderReviewReport,
   renderSetupReport,
-  renderStatusReport
+  renderStatusReport,
+  renderTasksReport
 } from "./lib/render.mjs";
 import { createJobMeta, listJobMeta, readJobMeta, updateJobMeta } from "./lib/state.mjs";
 
@@ -25,6 +26,7 @@ const USAGE = [
   "  node plugins/kiro/scripts/kiro-companion.mjs review [--base <ref>] [--wait|--background]",
   "  node plugins/kiro/scripts/kiro-companion.mjs rescue [--fresh|--resume] [--model <model>] [--agent <agent>] [--wait|--background] [task]",
   "  node plugins/kiro/scripts/kiro-companion.mjs status [job-id] [--json]",
+  "  node plugins/kiro/scripts/kiro-companion.mjs tasks",
   "  node plugins/kiro/scripts/kiro-companion.mjs result <job-id> [--json]",
   "  node plugins/kiro/scripts/kiro-companion.mjs cancel <job-id> [--json]"
 ].join("\n");
@@ -157,9 +159,15 @@ const DEFAULT_DEPS = {
   renderStatusReport,
   renderResultReport,
   renderCancelReport,
+  renderTasksReport,
   getStatusReport: async () => ({
     jobs: await listJobMeta()
   }),
+  getTasksReport: async () => {
+    const jobs = await listJobMeta();
+    const active = jobs.filter(j => j.status === "pending" || j.status === "running");
+    return { active, total: jobs.length };
+  },
   getResultReport: async (jobId) => {
     const job = await readJobMeta(jobId);
     return {
@@ -223,14 +231,14 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
     }
 
     if (command === "rescue" && !asBackground) {
-      const jobsBefore = await deps.listJobMeta();
-      const result = await executeRescueJob(options, deps);
-      const jobsAfter = await deps.listJobMeta();
-      if (jobsAfter.length <= jobsBefore.length) {
-        deps.write("[WARNING] No new kiro rescue job produced — kiro-cli may not have been invoked.\n");
-      }
-      deps.write(result.stdout);
-      return result.code === 0 ? 0 : 1;
+      const job = await deps.createJobMeta(command, options);
+      let result;
+      const tracked = await deps.runTrackedJob(job, async () => {
+        result = await executeRescueJob(options, deps);
+        return result;
+      });
+      deps.write(result?.stdout || "");
+      return tracked.status === "completed" ? 0 : 1;
     }
 
     const job = await deps.createJobMeta(command, options);
@@ -263,6 +271,12 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
   if (command === "status") {
     const report = await deps.getStatusReport();
     deps.write(deps.renderStatusReport(report));
+    return 0;
+  }
+
+  if (command === "tasks") {
+    const report = await deps.getTasksReport();
+    deps.write(deps.renderTasksReport(report));
     return 0;
   }
 

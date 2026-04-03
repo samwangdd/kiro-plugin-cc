@@ -3,6 +3,8 @@
 > 日期：2026-04-01
 > 状态：已批准
 
+> 2026-04-04 更新：`/kiro:rescue` 已调整为命令层直接执行 `kiro-companion`，不再经过 Claude rescue subagent。
+
 ## 概述
 
 kiro-companion 是一个 Claude Code 插件，让 Claude Code 可以通过 `kiro-cli` 调用 Kiro 的 AI 能力，实现代码审查（review）和任务派发（rescue）。设计参考 codex-plugin-cc，但针对 kiro-cli 的能力做了精简适配。
@@ -17,8 +19,6 @@ kiro-plugin-cc/
 │   └── kiro/
 │       ├── .claude-plugin/
 │       │   └── plugin.json       # 插件配置
-│       ├── agents/
-│       │   └── kiro-rescue.md    # rescue agent 定义
 │       ├── commands/
 │       │   ├── review.md         # /kiro:review 命令
 │       │   ├── rescue.md         # /kiro:rescue 命令
@@ -30,8 +30,6 @@ kiro-plugin-cc/
 │       │   └── review.md         # 审查 prompt 模板
 │       ├── schemas/
 │       │   └── review-output.schema.json  # 审查输出 JSON Schema
-│       ├── skills/
-│       │   └── kiro-cli-runtime/ # 内部 skill：CLI 调用运行时
 │       └── scripts/
 │           ├── kiro-companion.mjs # 主 companion 脚本
 │           └── lib/
@@ -185,10 +183,10 @@ kiro-cli chat --agent kiro_planner --no-interactive "prompt"
 ### /kiro:rescue — 任务派发
 
 **行为**：
-1. 将用户任务 + Handoff 上下文 组合成完整 prompt
-2. 调用 `kiro-cli chat --no-interactive --trust-all-tools "task prompt"`
-3. Kiro 执行完毕后，捕获所有文件变更
-4. 返回结果给主 Agent，由主 Agent 更新 Handoff
+1. Slash command 直接执行 `node "${CLAUDE_PLUGIN_ROOT}/scripts/kiro-companion.mjs" rescue ...`
+2. `kiro-companion` 将用户任务 + Handoff 上下文 组合成完整 prompt
+3. `kiro-companion` 调用 `kiro-cli chat --no-interactive --trust-all-tools "task prompt"`
+4. Kiro 执行完毕后返回 stdout，由 `kiro-companion` 更新 Handoff 并将结果原样返回
 
 **参数**：
 - `--background`：后台执行
@@ -214,14 +212,12 @@ kiro-cli chat --agent kiro_planner --no-interactive "prompt"
 
 终止正在运行的 kiro-cli 进程。
 
-## Agent 定义
+## 命令执行模型
 
-### kiro-rescue
-
-- **角色**：瘦转发包装器，仅将请求转发给 kiro-companion 脚本
-- **工具**：Bash
-- **Skills**：kiro-cli-runtime
-- **规则**：使用一个 Bash 调用转发任务，保留原始任务文本，仅转发输出不添加评论，默认启用写权限
+- `/kiro:review`：slash command 直接执行 `kiro-companion review`
+- `/kiro:rescue`：slash command 直接执行 `kiro-companion rescue`
+- `/kiro:setup` / `/kiro:status` / `/kiro:result` / `/kiro:cancel`：同样走命令层直连
+- rescue 不再依赖 Claude Code subagent 或内部 forwarding skill
 
 ## 完整工作流
 
@@ -252,7 +248,6 @@ kiro-cli chat --agent kiro_planner --no-interactive "prompt"
 ### 做
 
 - review / rescue / status / result / cancel / setup 六个命令
-- kiro-rescue agent
 - Handoff 文档管理
 - 作业状态持久化
 - 后台执行支持

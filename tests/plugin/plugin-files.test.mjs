@@ -1,4 +1,4 @@
-import { readFile } from "node:fs/promises";
+import { access, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 
 async function readJson(filePath) {
@@ -14,21 +14,24 @@ describe("plugin assets", () => {
     expect(manifest.plugins[0].source).toBe("./plugins/kiro");
   });
 
-  it("defines all v1 slash commands and the rescue agent", async () => {
+  it("defines all v1 slash commands without publishing the deprecated rescue forwarding layer", async () => {
     const review = await readFile("plugins/kiro/commands/review.md", "utf8");
     const rescue = await readFile("plugins/kiro/commands/rescue.md", "utf8");
     const setup = await readFile("plugins/kiro/commands/setup.md", "utf8");
     const status = await readFile("plugins/kiro/commands/status.md", "utf8");
     const result = await readFile("plugins/kiro/commands/result.md", "utf8");
     const cancel = await readFile("plugins/kiro/commands/cancel.md", "utf8");
-    const agent = await readFile("plugins/kiro/agents/kiro-rescue.md", "utf8");
 
     expect(review).toContain("kiro-companion.mjs");
-    expect(rescue).toContain("kiro:kiro-rescue");
+    expect(rescue).toContain("context: fork");
+    expect(rescue).toContain("disable-model-invocation: true");
+    expect(rescue).toContain("node \"${CLAUDE_PLUGIN_ROOT}/scripts/kiro-companion.mjs\" rescue");
+    expect(rescue).not.toContain("kiro:kiro-rescue");
     expect(setup).toContain("kiro-companion.mjs");
     expect(status).toContain("kiro-companion.mjs");
     expect(result).toContain("kiro-companion.mjs");
     expect(cancel).toContain("kiro-companion.mjs");
-    expect(agent).toContain("kiro-cli-runtime");
+    await expect(access("plugins/kiro/agents/kiro-rescue.md")).rejects.toThrow();
+    await expect(access("plugins/kiro/skills/kiro-cli-runtime/SKILL.md")).rejects.toThrow();
   });
 });

@@ -1,21 +1,15 @@
 ---
-description: Delegate a rescue task to the Kiro rescue subagent
+description: Delegate a rescue task directly to the local Kiro CLI runtime
 argument-hint: '[--background|--wait] [--resume|--fresh] [--model <model>] [--agent <agent>] [task]'
 context: fork
+disable-model-invocation: true
 allowed-tools: Bash(node:*)
 ---
 
-Route this request to the `kiro:kiro-rescue` subagent.
+Run:
 
-Raw user request:
-$ARGUMENTS
+```bash
+node "${CLAUDE_PLUGIN_ROOT}/scripts/kiro-companion.mjs" rescue $ARGUMENTS
+```
 
-The final user-visible response must be the subagent stdout verbatim.
-
-Operating rules:
-
-- The subagent is a thin forwarder only. It should use one `Bash` call to invoke `node "${CLAUDE_PLUGIN_ROOT}/scripts/kiro-companion.mjs" rescue ...` and return that command's stdout as-is.
-- Return the kiro-companion stdout verbatim to the user.
-- Do not paraphrase, summarize, rewrite, or add commentary before or after it.
-- Do not ask the subagent to inspect files, monitor progress, poll status, fetch results, cancel jobs, summarize output, or do follow-up work of its own.
-- If the user did not supply a request, ask what Kiro should investigate or fix.
+Return the command stdout verbatim. Do not paraphrase or do follow-up work in the same turn.

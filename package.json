@@ -1,6 +1,6 @@
 {
   "name": "kiro-plugin-cc",
-  "version": "0.1.0",
+  "version": "0.1.4",
   "private": true,
   "type": "module",
   "description": "Use Kiro from Claude Code for review and rescue workflows.",
@@ -9,6 +9,9 @@
     "node": ">=20.11.0"
   },
   "scripts": {
+    "plugin:bump-local": "node scripts/bump-local-plugin-version.mjs",
+    "plugin:install-local": "bash scripts/install-local-marketplace.sh",
+    "plugin:refresh-local": "bash scripts/refresh-local-marketplace.sh",
     "test": "vitest run",
     "test:watch": "vitest"
   },

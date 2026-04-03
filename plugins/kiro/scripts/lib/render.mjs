@@ -64,3 +64,29 @@ export function renderResultReport(report) {
 export function renderCancelReport(report) {
   return `Cancelled ${report.job.id} (${report.job.failureReason})\n`;
 }
+
+function formatElapsed(ms) {
+  const s = Math.floor(ms / 1000);
+  const m = Math.floor(s / 60);
+  return m > 0 ? `${m}m ${s % 60}s` : `${s}s`;
+}
+
+function truncate(str, max) {
+  return str.length > max ? `${str.slice(0, max)}...` : str;
+}
+
+export function renderTasksReport(report) {
+  if (report.active.length === 0) {
+    return "No active kiro tasks.\n";
+  }
+  const lines = [`Kiro tasks (${report.active.length} active)`, ""];
+  for (const job of report.active) {
+    const elapsed = job.status === "running"
+      ? formatElapsed(Date.now() - new Date(job.startedAt || job.createdAt).getTime())
+      : "—";
+    const summary = job.summary ? truncate(job.summary, 40) : "—";
+    lines.push(`  ${job.id}  ${job.command}  ${job.status}  ${elapsed}  ${summary}`);
+  }
+  lines.push("", "Tips: /kiro:result <id> to view details, /kiro:cancel <id> to cancel");
+  return `${lines.join("\n")}\n`;
+}

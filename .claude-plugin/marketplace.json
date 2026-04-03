@@ -5,13 +5,13 @@
   },
   "metadata": {
     "description": "Use Kiro from Claude Code for review and rescue workflows.",
-    "version": "0.1.0"
+    "version": "0.1.4"
   },
   "plugins": [
     {
       "name": "kiro",
       "description": "Run kiro-cli review and rescue workflows from Claude Code.",
-      "version": "0.1.0",
+      "version": "0.1.4",
       "author": {
         "name": "sammore"
       },

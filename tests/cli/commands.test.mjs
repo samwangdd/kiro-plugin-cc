@@ -3,6 +3,44 @@ import { describe, expect, it } from "vitest";
 import { runCli } from "../../plugins/kiro/scripts/kiro-companion.mjs";
 
 describe("high-level CLI commands", () => {
+  it("tracks foreground rescue jobs and returns stdout when kiro-cli succeeds", async () => {
+    let output = "";
+    let createdJob = null;
+    let trackedJob = null;
+
+    const exitCode = await runCli(["rescue", "Fix the flaky test"], {
+      write: (text) => { output += text; },
+      createJobMeta: async (command, options) => {
+        createdJob = {
+          id: "job-foreground",
+          command,
+          options,
+          status: "pending"
+        };
+        return createdJob;
+      },
+      runTrackedJob: async (job, execute) => {
+        trackedJob = job;
+        await execute();
+        return { ...job, status: "completed" };
+      },
+      readHandoff: async () => ({ completed: [], current: [], findings: [] }),
+      readHandoffText: async () => "handoff",
+      buildRescuePrompt: ({ taskText }) => taskText,
+      runRescueChat: async () => ({
+        stdout: "fixed\n",
+        stderr: "",
+        code: 0
+      }),
+      writeHandoff: async () => ({}),
+    });
+
+    expect(exitCode).toBe(0);
+    expect(createdJob?.id).toBe("job-foreground");
+    expect(trackedJob?.id).toBe("job-foreground");
+    expect(output).toBe("fixed\n");
+  });
+
   it("starts a background rescue job", async () => {
     let output = "";
 
