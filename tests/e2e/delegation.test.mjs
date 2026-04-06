@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
+import path from "node:path";
 
 import { collectToolUses, findForbiddenToolUses, findKeyBashCommands } from "../helpers/claude-stream.mjs";
-import { runDelegationSmoke, selectCurrentTurn, sliceCurrentTurnEvents } from "../helpers/claude-e2e.mjs";
+import { runDelegationSmoke, runProcess, selectCurrentTurn, sliceCurrentTurnEvents } from "../helpers/claude-e2e.mjs";
 
 describe("kiro rescue delegation", () => {
   it("keeps the full prompted turn instead of starting at the rescue Bash tool", () => {
@@ -75,16 +76,19 @@ describe("kiro rescue delegation", () => {
 
   it("delegates through kiro-companion without direct repository tools", async () => {
     const sentinel = "RESCUE_SENTINEL: delegated via stub";
+    const pluginDir = "plugins/kiro";
     const result = await runDelegationSmoke({
-      pluginDir: "plugins/kiro",
+      pluginDir,
       taskText: "smoke task",
       sentinel
     });
     const bashCommands = collectToolUses(result.events)
       .filter((item) => item.name === "Bash")
       .map((item) => item.input.command);
+    const kiroPlugin = result.init?.plugins?.find((plugin) => plugin.name === "kiro");
 
     expect(result.init?.slash_commands).toContain("kiro:rescue");
+    expect(kiroPlugin?.path).toBe(path.resolve(process.cwd(), pluginDir));
     expect(bashCommands).toHaveLength(1);
     expect(findKeyBashCommands(result.events)).toHaveLength(1);
     expect(findKeyBashCommands(result.events)[0]).toContain("kiro-companion.mjs");
@@ -96,4 +100,13 @@ describe("kiro rescue delegation", () => {
     expect(result.logText).toContain(sentinel);
     expect(result.handoffText).toContain(sentinel);
   }, 30000);
+
+  it("kills a hung subprocess when the helper timeout elapses", async () => {
+    await expect(
+      runProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+        timeoutMs: 50,
+        stdio: ["ignore", "pipe", "pipe"]
+      })
+    ).rejects.toThrow(/timed out/i);
+  }, 5000);
 });

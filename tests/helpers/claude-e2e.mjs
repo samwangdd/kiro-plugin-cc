@@ -5,11 +5,42 @@ import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 
 import { parseClaudeStream } from "./claude-stream.mjs";
 
-function runProcess(command, args, options = {}) {
+export function runProcess(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const child = spawn(command, args, options);
+    const { timeoutMs = 20000, ...spawnOptions } = options;
+    const child = spawn(command, args, spawnOptions);
     let stdout = "";
     let stderr = "";
+    let settled = false;
+    let killTimer = null;
+    let forceKillTimer = null;
+
+    const clearTimers = () => {
+      if (killTimer) {
+        clearTimeout(killTimer);
+      }
+      if (forceKillTimer) {
+        clearTimeout(forceKillTimer);
+      }
+    };
+
+    const settleReject = (error) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimers();
+      reject(error);
+    };
+
+    const settleResolve = (value) => {
+      if (settled) {
+        return;
+      }
+      settled = true;
+      clearTimers();
+      resolve(value);
+    };
 
     child.stdout.on("data", (chunk) => {
       stdout += chunk.toString();
@@ -19,10 +50,29 @@ function runProcess(command, args, options = {}) {
       stderr += chunk.toString();
     });
 
-    child.on("error", reject);
-    child.on("close", (code) => {
-      resolve({ code: code ?? 1, stdout, stderr });
+    child.on("error", (error) => {
+      clearTimers();
+      settleReject(error);
     });
+
+    child.on("close", (code) => {
+      clearTimers();
+      settleResolve({ code: code ?? 1, stdout, stderr });
+    });
+
+    if (timeoutMs > 0) {
+      killTimer = setTimeout(() => {
+        if (settled) {
+          return;
+        }
+        settled = true;
+        child.kill("SIGTERM");
+        forceKillTimer = setTimeout(() => {
+          child.kill("SIGKILL");
+        }, 1000);
+        reject(new Error(`Process timed out after ${timeoutMs}ms: ${command}`));
+      }, timeoutMs);
+    }
   });
 }
 
