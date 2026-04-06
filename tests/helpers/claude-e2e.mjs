@@ -27,8 +27,20 @@ function runProcess(command, args, options = {}) {
 }
 
 export function sliceCurrentTurnEvents(events) {
+  return selectCurrentTurn(events).events;
+}
+
+export function selectCurrentTurn(events) {
   const initIndex = events.findLastIndex((event) => event?.type === "system" && event?.subtype === "init");
-  return events.slice(initIndex === -1 ? 0 : initIndex + 1);
+  const init = initIndex === -1 ? null : events[initIndex];
+  const turnEvents = events.slice(initIndex === -1 ? 0 : initIndex + 1);
+  const resultEvent = turnEvents.findLast((event) => event?.type === "result") || null;
+
+  return {
+    init,
+    events: turnEvents,
+    resultEvent
+  };
 }
 
 async function makeTempDir(prefix) {
@@ -94,9 +106,7 @@ export async function runDelegationSmoke({ pluginDir, taskText, sentinel }) {
     }
 
     const allEvents = parseClaudeStream(run.stdout);
-    const events = sliceCurrentTurnEvents(allEvents);
-    const init = allEvents.find((event) => event.type === "system" && event.subtype === "init") || null;
-    const resultEvent = allEvents.findLast((event) => event.type === "result") || null;
+    const currentTurn = selectCurrentTurn(allEvents);
     const jobsDir = path.join(homeDir, "jobs");
     const jobFiles = (await readdir(jobsDir)).filter((name) => name.endsWith(".meta.json"));
 
@@ -111,10 +121,10 @@ export async function runDelegationSmoke({ pluginDir, taskText, sentinel }) {
     const handoffText = await readFile(path.join(projectDir, ".kiro-companion", "handoff.md"), "utf8");
 
     return {
-      events,
-      init,
-      resultEvent,
-      finalResult: resultEvent?.result || "",
+      events: currentTurn.events,
+      init: currentTurn.init,
+      resultEvent: currentTurn.resultEvent,
+      finalResult: currentTurn.resultEvent?.result || "",
       jobId: jobMeta.id,
       jobMeta,
       state,
