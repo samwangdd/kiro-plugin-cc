@@ -3,7 +3,7 @@ import path from "node:path";
 import { spawn } from "node:child_process";
 import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promises";
 
-import { findKeyBashCommands, parseClaudeStream } from "./claude-stream.mjs";
+import { parseClaudeStream } from "./claude-stream.mjs";
 
 function runProcess(command, args, options = {}) {
   return new Promise((resolve, reject) => {
@@ -26,21 +26,9 @@ function runProcess(command, args, options = {}) {
   });
 }
 
-function getCurrentTurnEvents(events) {
-  let startIndex = -1;
-
-  for (let index = 0; index < events.length; index += 1) {
-    if (findKeyBashCommands([events[index]]).length > 0) {
-      startIndex = index;
-    }
-  }
-
-  if (startIndex === -1) {
-    return events;
-  }
-
-  const resultIndex = events.findIndex((event, index) => index > startIndex && event?.type === "result");
-  return events.slice(startIndex, resultIndex === -1 ? undefined : resultIndex);
+export function sliceCurrentTurnEvents(events) {
+  const initIndex = events.findLastIndex((event) => event?.type === "system" && event?.subtype === "init");
+  return events.slice(initIndex === -1 ? 0 : initIndex + 1);
 }
 
 async function makeTempDir(prefix) {
@@ -106,7 +94,7 @@ export async function runDelegationSmoke({ pluginDir, taskText, sentinel }) {
     }
 
     const allEvents = parseClaudeStream(run.stdout);
-    const events = getCurrentTurnEvents(allEvents);
+    const events = sliceCurrentTurnEvents(allEvents);
     const init = allEvents.find((event) => event.type === "system" && event.subtype === "init") || null;
     const resultEvent = allEvents.findLast((event) => event.type === "result") || null;
     const jobsDir = path.join(homeDir, "jobs");
@@ -125,6 +113,7 @@ export async function runDelegationSmoke({ pluginDir, taskText, sentinel }) {
     return {
       events,
       init,
+      resultEvent,
       finalResult: resultEvent?.result || "",
       jobId: jobMeta.id,
       jobMeta,
