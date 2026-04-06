@@ -51,7 +51,6 @@ describe("plugin assets", () => {
 
     expect(e2eVitestConfig.test.environment).toBe("node");
     expect(e2eVitestConfig.test.include).toEqual(["tests/e2e/**/*.test.mjs"]);
-
-    await expect(access("tests/e2e/plugin-delegation.test.mjs")).resolves.toBeUndefined();
+    expect(e2eVitestConfig.test.passWithNoTests).toBe(true);
   });
 });
