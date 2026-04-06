@@ -27,7 +27,7 @@ describe("plugin assets", () => {
     expect(review).toContain("kiro-companion.mjs");
     expect(rescue).toContain("context: fork");
     expect(rescue).toContain("disable-model-invocation: true");
-    expect(rescue).toContain("allowed-tools: Bash(node:*)");
+    expect(rescue).toMatch(/^allowed-tools: Bash\(node:\*\)$/m);
     expect(rescue).toContain("node \"${CLAUDE_PLUGIN_ROOT}/scripts/kiro-companion.mjs\" rescue");
     expect(rescue).toContain("Return the command stdout verbatim.");
     expect(rescue).toContain("Do not paraphrase or do follow-up work in the same turn.");
