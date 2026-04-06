@@ -33,6 +33,59 @@ describe("claude stream helpers", () => {
     expect(events[2].type).toBe("result");
   });
 
+  it("finds forbidden tool uses when they are present", () => {
+    const events = parseClaudeStream([
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "Read",
+              input: { file_path: "/tmp/review.md" }
+            }
+          ]
+        }
+      })
+    ].join("\n"));
+
+    expect(findForbiddenToolUses(events, ["Read", "Edit", "Grep"])).toEqual([
+      {
+        eventType: "assistant",
+        name: "Read",
+        input: { file_path: "/tmp/review.md" }
+      }
+    ]);
+  });
+
+  it("extracts the rescue Bash command and filters out non-matching Bash commands", () => {
+    const events = parseClaudeStream([
+      JSON.stringify({
+        type: "assistant",
+        message: {
+          content: [
+            {
+              type: "tool_use",
+              name: "Bash",
+              input: { command: 'node "/tmp/kiro-companion.mjs" rescue --fresh smoke task' }
+            },
+            {
+              type: "tool_use",
+              name: "Bash",
+              input: { command: "npm test" }
+            }
+          ]
+        }
+      })
+    ].join("\n"));
+
+    expect(collectToolUses(events)).toHaveLength(2);
+    expect(findKeyBashCommands(events)).toEqual([
+      'node "/tmp/kiro-companion.mjs" rescue --fresh smoke task'
+    ]);
+    expect(findForbiddenToolUses(events, ["Read", "Edit", "Grep"])).toEqual([]);
+  });
+
   it("extracts exactly one key Bash command and no forbidden tools", () => {
     const events = parseClaudeStream([
       JSON.stringify({
