@@ -90,7 +90,10 @@ The refresh script auto-detects the configured local marketplace name for this c
 ```bash
 npm install
 npm test
+npm run test:e2e-delegation
 ```
+
+`npm run test:e2e-delegation` launches a real Claude CLI session with the local plugin and a stub `kiro-cli` to verify `/kiro:rescue` delegates through `kiro-companion` without direct repository tool use.
 
 ## License
 

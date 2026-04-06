@@ -104,7 +104,10 @@ npm run plugin:bump-local
 ```bash
 npm install
 npm test
+npm run test:e2e-delegation
 ```
+
+`npm run test:e2e-delegation` 会启动真实的 Claude CLI、本地 `kiro` 插件和一个 stub `kiro-cli`，用来验证 `/kiro:rescue` 是否确实通过 `kiro-companion` 完成委派，而不是由 Claude 直接使用仓库工具执行任务。
 
 ## 许可证
 
