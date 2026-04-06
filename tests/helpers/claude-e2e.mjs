@@ -14,6 +14,7 @@ export function runProcess(command, args, options = {}) {
     let settled = false;
     let killTimer = null;
     let forceKillTimer = null;
+    let timeoutError = null;
 
     const clearTimers = () => {
       if (killTimer) {
@@ -52,25 +53,28 @@ export function runProcess(command, args, options = {}) {
 
     child.on("error", (error) => {
       clearTimers();
-      settleReject(error);
+      settleReject(timeoutError || error);
     });
 
     child.on("close", (code) => {
       clearTimers();
+      if (timeoutError) {
+        settleReject(timeoutError);
+        return;
+      }
       settleResolve({ code: code ?? 1, stdout, stderr });
     });
 
     if (timeoutMs > 0) {
       killTimer = setTimeout(() => {
-        if (settled) {
+        if (settled || timeoutError) {
           return;
         }
-        settled = true;
+        timeoutError = new Error(`Process timed out after ${timeoutMs}ms: ${command}`);
         child.kill("SIGTERM");
         forceKillTimer = setTimeout(() => {
           child.kill("SIGKILL");
         }, 1000);
-        reject(new Error(`Process timed out after ${timeoutMs}ms: ${command}`));
       }, timeoutMs);
     }
   });

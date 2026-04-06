@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
+import os from "node:os";
 import path from "node:path";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 
 import { collectToolUses, findForbiddenToolUses, findKeyBashCommands } from "../helpers/claude-stream.mjs";
 import { runDelegationSmoke, runProcess, selectCurrentTurn, sliceCurrentTurnEvents } from "../helpers/claude-e2e.mjs";
@@ -85,10 +87,12 @@ describe("kiro rescue delegation", () => {
     const bashCommands = collectToolUses(result.events)
       .filter((item) => item.name === "Bash")
       .map((item) => item.input.command);
+    const toolNames = [...new Set(collectToolUses(result.events).map((item) => item.name))];
     const kiroPlugin = result.init?.plugins?.find((plugin) => plugin.name === "kiro");
 
     expect(result.init?.slash_commands).toContain("kiro:rescue");
     expect(kiroPlugin?.path).toBe(path.resolve(process.cwd(), pluginDir));
+    expect(toolNames).toEqual(["Bash"]);
     expect(bashCommands).toHaveLength(1);
     expect(findKeyBashCommands(result.events)).toHaveLength(1);
     expect(findKeyBashCommands(result.events)[0]).toContain("kiro-companion.mjs");
@@ -102,11 +106,39 @@ describe("kiro rescue delegation", () => {
   }, 30000);
 
   it("kills a hung subprocess when the helper timeout elapses", async () => {
-    await expect(
-      runProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+    const tempDir = await mkdtemp(path.join(os.tmpdir(), "kiro-e2e-timeout-"));
+    const pidFile = path.join(tempDir, "child.pid");
+    const waitForPidFile = async () => {
+      for (let attempt = 0; attempt < 50; attempt += 1) {
+        try {
+          return (await readFile(pidFile, "utf8")).trim();
+        } catch {
+          await new Promise((resolve) => setTimeout(resolve, 10));
+        }
+      }
+
+      throw new Error(`Timed out waiting for pid file: ${pidFile}`);
+    };
+
+    try {
+      const run = runProcess(process.execPath, [
+        "-e",
+        `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`
+      ], {
         timeoutMs: 50,
         stdio: ["ignore", "pipe", "pipe"]
-      })
-    ).rejects.toThrow(/timed out/i);
+      });
+      const timeoutError = run.then(
+        () => null,
+        (error) => error
+      );
+
+      const pid = Number(await waitForPidFile());
+
+      expect((await timeoutError)?.message).toMatch(/timed out/i);
+      expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
+    } finally {
+      await rm(tempDir, { recursive: true, force: true });
+    }
   }, 5000);
 });
