@@ -7,7 +7,7 @@ import { parseClaudeStream } from "./claude-stream.mjs";
 
 export function runProcess(command, args, options = {}) {
   return new Promise((resolve, reject) => {
-    const { timeoutMs = 20000, ...spawnOptions } = options;
+    const { onSpawn, timeoutMs = 20000, ...spawnOptions } = options;
     const child = spawn(command, args, spawnOptions);
     let stdout = "";
     let stderr = "";
@@ -15,6 +15,10 @@ export function runProcess(command, args, options = {}) {
     let killTimer = null;
     let forceKillTimer = null;
     let timeoutError = null;
+
+    if (typeof onSpawn === "function") {
+      onSpawn(child);
+    }
 
     const clearTimers = () => {
       if (killTimer) {

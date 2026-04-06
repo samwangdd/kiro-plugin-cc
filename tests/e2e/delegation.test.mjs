@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
-import os from "node:os";
 import path from "node:path";
-import { mkdtemp, readFile, rm } from "node:fs/promises";
 
 import { collectToolUses, findForbiddenToolUses, findKeyBashCommands } from "../helpers/claude-stream.mjs";
 import { runDelegationSmoke, runProcess, selectCurrentTurn, sliceCurrentTurnEvents } from "../helpers/claude-e2e.mjs";
@@ -106,39 +104,21 @@ describe("kiro rescue delegation", () => {
   }, 30000);
 
   it("kills a hung subprocess when the helper timeout elapses", async () => {
-    const tempDir = await mkdtemp(path.join(os.tmpdir(), "kiro-e2e-timeout-"));
-    const pidFile = path.join(tempDir, "child.pid");
-    const waitForPidFile = async () => {
-      for (let attempt = 0; attempt < 50; attempt += 1) {
-        try {
-          return (await readFile(pidFile, "utf8")).trim();
-        } catch {
-          await new Promise((resolve) => setTimeout(resolve, 10));
-        }
+    let pid = null;
+
+    const timeoutError = runProcess(process.execPath, ["-e", "setInterval(() => {}, 1000)"], {
+      timeoutMs: 50,
+      stdio: ["ignore", "pipe", "pipe"],
+      onSpawn: (child) => {
+        pid = child.pid ?? null;
       }
+    }).then(
+      () => null,
+      (error) => error
+    );
 
-      throw new Error(`Timed out waiting for pid file: ${pidFile}`);
-    };
-
-    try {
-      const run = runProcess(process.execPath, [
-        "-e",
-        `require("node:fs").writeFileSync(${JSON.stringify(pidFile)}, String(process.pid)); setInterval(() => {}, 1000);`
-      ], {
-        timeoutMs: 50,
-        stdio: ["ignore", "pipe", "pipe"]
-      });
-      const timeoutError = run.then(
-        () => null,
-        (error) => error
-      );
-
-      const pid = Number(await waitForPidFile());
-
-      expect((await timeoutError)?.message).toMatch(/timed out/i);
-      expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
-    } finally {
-      await rm(tempDir, { recursive: true, force: true });
-    }
+    expect(typeof pid).toBe("number");
+    expect((await timeoutError)?.message).toMatch(/timed out/i);
+    expect(() => process.kill(pid, 0)).toThrow(/ESRCH/);
   }, 5000);
 });
