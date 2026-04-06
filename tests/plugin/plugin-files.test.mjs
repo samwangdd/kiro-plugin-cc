@@ -1,5 +1,7 @@
 import { access, readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
+import defaultVitestConfig from "../../vitest.config.mjs";
+import e2eVitestConfig from "../../vitest.config.e2e.mjs";
 
 async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
@@ -40,5 +42,16 @@ describe("plugin assets", () => {
 
     expect(pkg.scripts.test).toBe("vitest run");
     expect(pkg.scripts["test:e2e-delegation"]).toBe("vitest run --config vitest.config.e2e.mjs");
+  });
+
+  it("splits default vitest tests from dedicated e2e tests", async () => {
+    expect(defaultVitestConfig.test.environment).toBe("node");
+    expect(defaultVitestConfig.test.include).toEqual(["tests/**/*.test.mjs"]);
+    expect(defaultVitestConfig.test.exclude).toEqual(["tests/e2e/**/*.test.mjs"]);
+
+    expect(e2eVitestConfig.test.environment).toBe("node");
+    expect(e2eVitestConfig.test.include).toEqual(["tests/e2e/**/*.test.mjs"]);
+
+    await expect(access("tests/e2e/plugin-delegation.test.mjs")).resolves.toBeUndefined();
   });
 });
