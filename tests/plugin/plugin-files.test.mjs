@@ -34,4 +34,11 @@ describe("plugin assets", () => {
     await expect(access("plugins/kiro/agents/kiro-rescue.md")).rejects.toThrow();
     await expect(access("plugins/kiro/skills/kiro-cli-runtime/SKILL.md")).rejects.toThrow();
   });
+
+  it("publishes a dedicated delegation e2e script outside default npm test", async () => {
+    const pkg = await readJson("package.json");
+
+    expect(pkg.scripts.test).toBe("vitest run");
+    expect(pkg.scripts["test:e2e-delegation"]).toBe("vitest run --config vitest.config.e2e.mjs");
+  });
 });
