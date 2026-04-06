@@ -5,6 +5,30 @@ import { chmod, mkdtemp, readdir, readFile, rm, writeFile } from "node:fs/promis
 
 import { parseClaudeStream } from "./claude-stream.mjs";
 
+const DEFAULT_CLAUDE_E2E_TIMEOUT_MS = 30000;
+
+function readTimeoutMs(env = process.env) {
+  const raw = env.CLAUDE_E2E_TIMEOUT_MS;
+  const parsed = Number(raw);
+
+  return Number.isFinite(parsed) && parsed > 0
+    ? parsed
+    : DEFAULT_CLAUDE_E2E_TIMEOUT_MS;
+}
+
+function shouldKeepArtifacts(env = process.env) {
+  return env.KEEP_E2E_ARTIFACTS === "1";
+}
+
+function formatArtifactPaths(paths) {
+  return [
+    "E2E artifacts preserved at:",
+    `- bin: ${paths.tempBin}`,
+    `- project: ${paths.projectDir}`,
+    `- home: ${paths.homeDir}`
+  ].join("\n");
+}
+
 export function runProcess(command, args, options = {}) {
   return new Promise((resolve, reject) => {
     const { onSpawn, timeoutMs = 20000, ...spawnOptions } = options;
@@ -130,6 +154,8 @@ export async function runDelegationSmoke({ pluginDir, taskText, sentinel }) {
   const tempBin = await makeTempDir("kiro-e2e-bin-");
   const projectDir = await makeTempDir("kiro-e2e-project-");
   const homeDir = await makeTempDir("kiro-e2e-home-");
+  const artifactPaths = { tempBin, projectDir, homeDir };
+  let preserveArtifacts = shouldKeepArtifacts(process.env);
 
   try {
     await createStubKiroCli(tempBin, sentinel);
@@ -149,6 +175,7 @@ export async function runDelegationSmoke({ pluginDir, taskText, sentinel }) {
     ];
 
     const run = await runProcess(command, args, {
+      timeoutMs: readTimeoutMs(process.env),
       cwd: projectDir,
       env: {
         ...process.env,
@@ -189,9 +216,19 @@ export async function runDelegationSmoke({ pluginDir, taskText, sentinel }) {
       logText,
       handoffText
     };
+  } catch (error) {
+    preserveArtifacts = true;
+
+    if (error instanceof Error) {
+      error.message = `${error.message}\n${formatArtifactPaths(artifactPaths)}`;
+    }
+
+    throw error;
   } finally {
-    await rm(tempBin, { recursive: true, force: true });
-    await rm(projectDir, { recursive: true, force: true });
-    await rm(homeDir, { recursive: true, force: true });
+    if (!preserveArtifacts) {
+      await rm(tempBin, { recursive: true, force: true });
+      await rm(projectDir, { recursive: true, force: true });
+      await rm(homeDir, { recursive: true, force: true });
+    }
   }
 }

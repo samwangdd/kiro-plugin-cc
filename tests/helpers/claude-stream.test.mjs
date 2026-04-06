@@ -108,4 +108,10 @@ describe("claude stream helpers", () => {
     ]);
     expect(findForbiddenToolUses(events, ["Read", "Edit", "Grep"])).toEqual([]);
   });
+
+  it("reports the failing line number and snippet when JSON parsing fails", () => {
+    expect(() => parseClaudeStream('{"type":"system"}\nnot-json')).toThrow(
+      /line 2: not-json/
+    );
+  });
 });

@@ -1,9 +1,19 @@
 export function parseClaudeStream(text) {
   return String(text)
     .split(/\r?\n/)
-    .map((line) => line.trim())
-    .filter(Boolean)
-    .map((line) => JSON.parse(line));
+    .map((line, index) => ({
+      line: line.trim(),
+      lineNumber: index + 1
+    }))
+    .filter(({ line }) => Boolean(line))
+    .map(({ line, lineNumber }) => {
+      try {
+        return JSON.parse(line);
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        throw new Error(`Failed to parse Claude stream line ${lineNumber}: ${line}\n${message}`);
+      }
+    });
 }
 
 export function collectToolUses(events) {

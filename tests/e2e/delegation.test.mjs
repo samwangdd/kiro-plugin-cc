@@ -4,6 +4,9 @@ import path from "node:path";
 import { collectToolUses, findForbiddenToolUses, findKeyBashCommands } from "../helpers/claude-stream.mjs";
 import { runDelegationSmoke, runProcess, selectCurrentTurn, sliceCurrentTurnEvents } from "../helpers/claude-e2e.mjs";
 
+const smokeTimeoutMs = Number(process.env.CLAUDE_E2E_TIMEOUT_MS || "30000");
+const smokeTestTimeoutMs = smokeTimeoutMs + 10000;
+
 describe("kiro rescue delegation", () => {
   it("keeps the full prompted turn instead of starting at the rescue Bash tool", () => {
     const events = [
@@ -101,7 +104,7 @@ describe("kiro rescue delegation", () => {
     expect(result.state.jobs[result.jobId].summary).toContain(sentinel);
     expect(result.logText).toContain(sentinel);
     expect(result.handoffText).toContain(sentinel);
-  }, 30000);
+  }, smokeTestTimeoutMs);
 
   it("kills a hung subprocess when the helper timeout elapses", async () => {
     let pid = null;
