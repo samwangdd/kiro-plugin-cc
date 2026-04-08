@@ -25,7 +25,6 @@ describe("high-level CLI commands", () => {
         return { ...job, status: "completed" };
       },
       readHandoff: async () => ({ completed: [], current: [], findings: [] }),
-      readHandoffText: async () => "handoff",
       buildRescuePrompt: ({ taskText }) => taskText,
       runRescueChat: async () => ({
         stdout: "fixed\n",

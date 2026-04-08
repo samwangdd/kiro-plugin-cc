@@ -1,5 +1,11 @@
 import { spawn } from "node:child_process";
 
+// Strip ANSI escape codes (colors, cursor, etc.) from kiro-cli output
+const ANSI_RE = /\x1b\[[0-9;]*[a-zA-Z]/g;
+export function stripAnsi(text) {
+  return text.replace(ANSI_RE, "");
+}
+
 function parseJson(text, fallback) {
   try {
     return JSON.parse(text);
@@ -97,8 +103,8 @@ export async function runKiro(
       clearTimeout(timer);
       resolve({
         code: code ?? 1,
-        stdout,
-        stderr
+        stdout: stripAnsi(stdout),
+        stderr: stripAnsi(stderr)
       });
     });
   });

@@ -1,6 +1,6 @@
 {
   "name": "kiro",
-  "version": "0.1.4",
+  "version": "0.1.8",
   "description": "Run kiro-cli review and rescue workflows from Claude Code.",
   "author": {
     "name": "sammore"

@@ -106,10 +106,9 @@ async function executeReviewJob(options, deps) {
 
 async function executeRescueJob(options, deps) {
   const snapshot = await deps.readHandoff(process.cwd());
-  const visibleHandoff = await deps.readHandoffText(process.cwd());
   const prompt = deps.buildRescuePrompt({
     taskText: options.task,
-    handoffText: visibleHandoff
+    enrichedTask: options.enrichedTask
   });
   const response = await deps.runRescueChat(prompt, options);
 
@@ -206,6 +205,8 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
     readFlag(args, "--wait");
     const resume = readFlag(args, "--resume");
     const fresh = readFlag(args, "--fresh");
+    const enrichedTask = readOption(args, "--enriched-task");
+    readFlag(args, "--raw");
 
     if (resume && fresh) {
       throw new Error("Choose either --resume or --fresh.");
@@ -217,10 +218,11 @@ export async function runCli(argv = process.argv.slice(2), deps = DEFAULT_DEPS) 
       agent,
       resume,
       fresh,
+      enrichedTask,
       task: args.join(" ").trim()
     };
 
-    if (command === "rescue" && !options.task) {
+    if (command === "rescue" && !options.task && !options.enrichedTask) {
       throw new Error("Rescue requires a task description.");
     }
 

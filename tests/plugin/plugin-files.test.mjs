@@ -26,11 +26,13 @@ describe("plugin assets", () => {
 
     expect(review).toContain("kiro-companion.mjs");
     expect(rescue).toContain("context: fork");
-    expect(rescue).toContain("disable-model-invocation: true");
-    expect(rescue).toMatch(/^allowed-tools: Bash\(node:\*\)$/m);
+    expect(rescue).not.toContain("disable-model-invocation: true");
+    expect(rescue).toMatch(/^allowed-tools: Bash\(node:\*\), Bash\(git:\*\)$/m);
     expect(rescue).toContain("node \"${CLAUDE_PLUGIN_ROOT}/scripts/kiro-companion.mjs\" rescue");
+    expect(rescue).toContain("--enriched-task");
     expect(rescue).toContain("Return the command stdout verbatim.");
     expect(rescue).toContain("Do not paraphrase or do follow-up work in the same turn.");
+    expect(rescue).toContain("--raw");
     expect(rescue).not.toContain("kiro:kiro-rescue");
     expect(setup).toContain("kiro-companion.mjs");
     expect(status).toContain("kiro-companion.mjs");
